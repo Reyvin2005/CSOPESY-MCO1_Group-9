@@ -5,7 +5,7 @@
                         Barlaan, Bahir Benjamin C.
                         Co, Joshua Benedict B.
                         Tan, Reyvin Matthew T.
-    Version Date: October 16, 2025
+    Version Date: October 31, 2025
 
     ═══════════════════════════════════════════════════════════════════════
     HOW TO USE THIS OS EMULATOR:
@@ -14,13 +14,13 @@
     COMPILATION:
     ------------
     Windows (MSVC):
-        cl /EHsc /std:c++17 Group_9_MO1_OS_Emulator.cpp
+        cl /EHsc /std:c++14 Group_9_MO1_OS_Emulator.cpp
     
     Windows (MinGW):
-        g++ -std=c++17 -pthread Group_9_MO1_OS_Emulator.cpp -o os_emulator.exe
+        g++ -std=c++14 -pthread Group_9_MO1_OS_Emulator.cpp -o os_emulator.exe
     
     Linux/Mac:
-        g++ -std=c++17 -pthread Group_9_MO1_OS_Emulator.cpp -o os_emulator
+        g++ -std=c++14 -pthread Group_9_MO1_OS_Emulator.cpp -o os_emulator
     
     RUNNING:
     --------
@@ -93,12 +93,24 @@
     
     CONFIGURATION:
     --------------
-    You can modify these constants in the code:
-    - NUM_CPU: Number of CPU cores (default: 4)
-    - SCHEDULER_TYPE: "fcfs" or "rr"
-    - QUANTUM_CYCLES: Time quantum for round-robin (default: 5)
-    - MIN_INS / MAX_INS: Range of instructions per process
-    - BATCH_PROCESS_FREQ: Frequency of batch process generation
+    Create a config.txt file in the same directory with the following format:
+    
+    num-cpu 4
+    scheduler fcfs
+    quantum-cycles 5
+    min-ins 100
+    max-ins 1000
+    delays-per-exec 100
+    
+    Parameters:
+    - num-cpu: Number of CPU cores (default: 4)
+    - scheduler: "fcfs" (First-Come-First-Served) or "rr" (Round-Robin)
+    - quantum-cycles: Time quantum for round-robin (default: 5)
+    - min-ins: Minimum instructions per process (default: 100)
+    - max-ins: Maximum instructions per process (default: 1000)
+    - delays-per-exec: Delay in ms per instruction (default: 100)
+    
+    If config.txt is not found, default values will be used.
     
     ═══════════════════════════════════════════════════════════════════════
 */
@@ -147,14 +159,59 @@ namespace Colors {
     const std::string BOLD = "\033[1m";
 }
 
-// System configuration
-const int NUM_CPU = 4;                    // Number of CPU cores
-const std::string SCHEDULER_TYPE = "fcfs"; // "fcfs" or "rr"
-const int QUANTUM_CYCLES = 5;             // Time quantum for round-robin
-const int MIN_INS = 100;                  // Minimum instructions per process
-const int MAX_INS = 1000;                 // Maximum instructions per process
-const int BATCH_PROCESS_FREQ = 3;         // Generate process every N seconds
-const int DELAYS_PER_EXEC = 100;          // Delay in ms per instruction execution
+// System configuration (loaded from config.txt or default values)
+int NUM_CPU = 4;                          // Number of CPU cores
+std::string SCHEDULER_TYPE = "fcfs";      // "fcfs" or "rr"
+int QUANTUM_CYCLES = 5;                   // Time quantum for round-robin
+int MIN_INS = 100;                        // Minimum instructions per process
+int MAX_INS = 1000;                       // Maximum instructions per process
+int BATCH_PROCESS_FREQ = 3;               // Generate process every N seconds
+int DELAYS_PER_EXEC = 100;                // Delay in ms per instruction execution
+
+// Function to load configuration from config.txt
+void load_config() {
+    std::ifstream config_file("config.txt");
+    if (!config_file.is_open()) {
+        std::cerr << "Warning: config.txt not found. Using default values.\n";
+        return;
+    }
+    
+    std::string line;
+    while (std::getline(config_file, line)) {
+        std::istringstream iss(line);
+        std::string key, value;
+        iss >> key >> value;
+        
+        try {
+            if (key == "num-cpu") {
+                NUM_CPU = std::stoi(value);
+                if (NUM_CPU < 1) NUM_CPU = 1;  // Minimum 1 core
+            } else if (key == "scheduler") {
+                SCHEDULER_TYPE = value;
+            } else if (key == "quantum-cycles") {
+                QUANTUM_CYCLES = std::stoi(value);
+                if (QUANTUM_CYCLES < 1) QUANTUM_CYCLES = 1;  // Minimum 1 cycle
+            } else if (key == "min-ins") {
+                MIN_INS = std::stoi(value);
+                if (MIN_INS < 1) MIN_INS = 1;  // Minimum 1 instruction
+            } else if (key == "max-ins") {
+                MAX_INS = std::stoi(value);
+                if (MAX_INS < MIN_INS) MAX_INS = MIN_INS;  // Max must be >= Min
+            } else if (key == "delays-per-exec") {
+                DELAYS_PER_EXEC = std::stoi(value);
+                if (DELAYS_PER_EXEC < 0) DELAYS_PER_EXEC = 0;  // Minimum 0ms delay
+            } else if (key == "batch-process-freq") {
+                BATCH_PROCESS_FREQ = std::stoi(value);
+                if (BATCH_PROCESS_FREQ < 1) BATCH_PROCESS_FREQ = 1;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Warning: Invalid value for '" << key << "': " << value 
+                      << ". Using default.\n";
+        }
+    }
+    
+    config_file.close();
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 // SECTION 2: PROCESS CLASS
@@ -185,7 +242,23 @@ public:
         
         time_t now = time(nullptr);
         char buffer[80];
-        strftime(buffer, sizeof(buffer), "%m/%d/%Y, %I:%M:%S %p", localtime(&now));
+        
+        // Use localtime_s on MSVC, localtime_r on Unix, localtime on MinGW
+        #if defined(_MSC_VER)
+            tm timeinfo;
+            localtime_s(&timeinfo, &now);
+            strftime(buffer, sizeof(buffer), "%m/%d/%Y, %I:%M:%S %p", &timeinfo);
+        #elif defined(__GNUC__) && !defined(_WIN32)
+            tm timeinfo;
+            localtime_r(&now, &timeinfo);
+            strftime(buffer, sizeof(buffer), "%m/%d/%Y, %I:%M:%S %p", &timeinfo);
+        #else
+            #pragma warning(push)
+            #pragma warning(disable: 4996)
+            strftime(buffer, sizeof(buffer), "%m/%d/%Y, %I:%M:%S %p", localtime(&now));
+            #pragma warning(pop)
+        #endif
+        
         timestamp = buffer;
     }
 
@@ -384,12 +457,31 @@ private:
 
     // Execute a process (runs in separate thread per process)
     void execute_process(std::shared_ptr<Process> process, int core) {
-        while (!process->is_finished() && running) {
-            // Execute one instruction
-            process->execute_instruction();
+        if (scheduler_type == "fcfs") {
+            // FCFS: Run process to completion
+            while (!process->is_finished() && running) {
+                process->execute_instruction();
+                std::this_thread::sleep_for(std::chrono::milliseconds(DELAYS_PER_EXEC));
+            }
+        } else if (scheduler_type == "rr") {
+            // Round-Robin: Execute for quantum cycles, then requeue if not finished
+            int cycles_executed = 0;
+            while (!process->is_finished() && running && cycles_executed < quantum_cycles) {
+                process->execute_instruction();
+                cycles_executed++;
+                std::this_thread::sleep_for(std::chrono::milliseconds(DELAYS_PER_EXEC));
+            }
             
-            // Simulate CPU work
-            std::this_thread::sleep_for(std::chrono::milliseconds(DELAYS_PER_EXEC));
+            // If process is not finished, put it back in the queue
+            if (!process->is_finished() && running) {
+                std::lock_guard<std::mutex> lock(scheduler_mutex);
+                process->set_state(Process::READY);
+                process->set_core_id(-1);
+                ready_queue.push(process);
+                cpu_cores[core] = nullptr;
+                queue_cv.notify_one();
+                return; // Don't mark as finished yet
+            }
         }
         
         // Mark as finished and free the core
@@ -497,8 +589,11 @@ void clear_screen() {
 
 // Clear a specific line
 void clear_line(int row) {
-    gotoxy(1, row);
-    std::cout << std::string(layout.screen_width, ' ') << std::flush;
+    std::lock_guard<std::mutex> lock(console_mutex);
+    printf("\033[%d;%dH", row, 1);  // Move to start of line
+    printf("%s", std::string(layout.screen_width, ' ').c_str());  // Clear line
+    printf("\033[%d;%dH", row, 1);  // Move back to start
+    fflush(stdout);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -512,13 +607,13 @@ void display_main_ui() {
     // Header
     gotoxy(1, layout.header_row);
     std::cout << Colors::BOLD << Colors::BRIGHT_BLUE
-              << "╔════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗\n"
-              << "║                              CSOPESY OS EMULATOR - PROCESS SCHEDULER (MO1)                                    ║\n"
-              << "╚════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝"
-              << Colors::RESET << "\n";
+              << "========================================================================================================\n"
+              << "                        CSOPESY OS EMULATOR - PROCESS SCHEDULER (MO1)                                   \n"
+              << "========================================================================================================\n"
+              << Colors::RESET;
     
     // Status
-    gotoxy(1, layout.status_row);
+    gotoxy(1, layout.status_row + 1);
     std::cout << Colors::BRIGHT_WHITE << "System Status: " << Colors::RESET;
     if (system_initialized) {
         std::cout << Colors::BRIGHT_GREEN << "INITIALIZED" << Colors::RESET;
@@ -531,7 +626,7 @@ void display_main_ui() {
         int active, total, running, finished;
         scheduler->get_stats(active, total, running, finished);
         
-        gotoxy(1, layout.cpu_util_row);
+        gotoxy(1, layout.cpu_util_row + 1);
         std::cout << Colors::BRIGHT_WHITE << "CPU Utilization: " << Colors::CYAN 
                   << active << "/" << total << " cores active" << Colors::RESET
                   << " | " << Colors::BRIGHT_WHITE << "Running: " << Colors::GREEN 
@@ -541,7 +636,7 @@ void display_main_ui() {
     }
     
     // Help hint
-    gotoxy(1, layout.help_row);
+    gotoxy(1, layout.help_row + 1);
     std::cout << Colors::BRIGHT_GREEN << "Type 'help' for available commands. "
               << "Type 'initialize' to start the OS emulator." << Colors::RESET;
     
@@ -553,17 +648,40 @@ void display_main_ui() {
 // Update CPU utilization display
 void update_cpu_display() {
     if (scheduler && system_initialized) {
+        static int last_active = -1, last_running = -1, last_finished = -1;
+        
         int active, total, running, finished;
         scheduler->get_stats(active, total, running, finished);
         
-        clear_line(layout.cpu_util_row);
-        gotoxy(1, layout.cpu_util_row);
-        std::cout << Colors::BRIGHT_WHITE << "CPU Utilization: " << Colors::CYAN 
-                  << active << "/" << total << " cores active" << Colors::RESET
-                  << " | " << Colors::BRIGHT_WHITE << "Running: " << Colors::GREEN 
-                  << running << Colors::RESET
-                  << " | " << Colors::BRIGHT_WHITE << "Finished: " << Colors::YELLOW 
-                  << finished << Colors::RESET << std::flush;
+        // Only update if values have changed
+        if (active != last_active || running != last_running || finished != last_finished) {
+            last_active = active;
+            last_running = running;
+            last_finished = finished;
+            
+            // Save cursor position
+            {
+                std::lock_guard<std::mutex> lock(console_mutex);
+                printf("\033[s");  // Save cursor position
+                fflush(stdout);
+            }
+            
+            clear_line(layout.cpu_util_row + 1);
+            gotoxy(1, layout.cpu_util_row + 1);
+            std::cout << Colors::BRIGHT_WHITE << "CPU Utilization: " << Colors::CYAN 
+                      << active << "/" << total << " cores active" << Colors::RESET
+                      << " | " << Colors::BRIGHT_WHITE << "Running: " << Colors::GREEN 
+                      << running << Colors::RESET
+                      << " | " << Colors::BRIGHT_WHITE << "Finished: " << Colors::YELLOW 
+                      << finished << Colors::RESET << std::flush;
+            
+            // Restore cursor position
+            {
+                std::lock_guard<std::mutex> lock(console_mutex);
+                printf("\033[u");  // Restore cursor position
+                fflush(stdout);
+            }
+        }
     }
 }
 
@@ -572,9 +690,9 @@ void display_help() {
     clear_screen();
     
     std::cout << Colors::BOLD << Colors::BRIGHT_CYAN 
-              << "\n═══════════════════════════════════════════════════════════════════\n"
+              << "\n==================================================================\n"
               << "                    AVAILABLE COMMANDS\n"
-              << "═══════════════════════════════════════════════════════════════════\n"
+              << "==================================================================\n"
               << Colors::RESET;
     
     std::cout << Colors::BRIGHT_YELLOW << "\n  initialize" << Colors::WHITE 
@@ -609,12 +727,12 @@ void display_help() {
               << "\n    - Exits the OS emulator\n";
     
     std::cout << Colors::BRIGHT_CYAN 
-              << "\n═══════════════════════════════════════════════════════════════════\n"
+              << "\n==================================================================\n"
               << Colors::RESET;
     
-    std::cout << "\nPress Enter to continue...";
-    std::cin.ignore();
-    std::cin.get();
+    std::cout << "\nPress Enter to continue..." << std::flush;
+    std::string dummy;
+    std::getline(std::cin, dummy);
     
     display_main_ui();
 }
@@ -640,10 +758,10 @@ void display_process_screen(std::shared_ptr<Process> process) {
     int total = process->get_total_commands();
     
     std::cout << Colors::CYAN << "Execution Log:" << Colors::RESET << "\n";
-    std::cout << "─────────────────────────────────────────────────────\n";
+    std::cout << "-----------------------------------------------------\n";
     
     // Show last 10 executed instructions
-    int start = std::max(0, current - 10);
+    int start = (current - 10 > 0) ? (current - 10) : 0;
     for (int i = start; i < current && i < total; i++) {
         std::cout << Colors::GREEN << "  [" << i << "] " 
                   << Colors::WHITE << "Instruction executed" << Colors::RESET << "\n";
@@ -654,12 +772,12 @@ void display_process_screen(std::shared_ptr<Process> process) {
                   << Colors::WHITE << "Current instruction (executing...)" << Colors::RESET << "\n";
     }
     
-    std::cout << "─────────────────────────────────────────────────────\n";
+    std::cout << "-----------------------------------------------------\n";
     
     if (current >= total) {
-        std::cout << Colors::BRIGHT_GREEN << "\n✓ Process finished!\n" << Colors::RESET;
+        std::cout << Colors::BRIGHT_GREEN << "\n[FINISHED] Process finished!\n" << Colors::RESET;
     } else {
-        std::cout << Colors::YELLOW << "\n⟳ Process running...\n" << Colors::RESET;
+        std::cout << Colors::YELLOW << "\n[RUNNING] Process running...\n" << Colors::RESET;
     }
 }
 
@@ -673,13 +791,13 @@ void display_process_list() {
     auto processes = scheduler->get_all_processes();
     
     std::cout << Colors::BOLD << Colors::BRIGHT_CYAN << "\nProcess List:\n" << Colors::RESET;
-    std::cout << "─────────────────────────────────────────────────────────────────────────────────────\n";
+    std::cout << "-------------------------------------------------------------------------------------\n";
     std::cout << std::left << std::setw(20) << "Name" 
               << std::setw(12) << "State"
               << std::setw(8) << "Core"
               << std::setw(15) << "Progress"
               << "Created\n";
-    std::cout << "─────────────────────────────────────────────────────────────────────────────────────\n";
+    std::cout << "-------------------------------------------------------------------------------------\n";
     
     for (auto& process : processes) {
         std::cout << std::left << std::setw(20) << process->get_name();
@@ -708,7 +826,7 @@ void display_process_list() {
         std::cout << process->get_timestamp() << "\n";
     }
     
-    std::cout << "─────────────────────────────────────────────────────────────────────────────────────\n";
+    std::cout << "-------------------------------------------------------------------------------------\n";
 }
 
 // Generate utilization report
@@ -723,7 +841,22 @@ void generate_report() {
     
     time_t now = time(nullptr);
     char timestamp[80];
-    strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&now));
+    
+    // Use localtime_s on MSVC, localtime_r on Unix, localtime on MinGW
+    #if defined(_MSC_VER)
+        tm timeinfo;
+        localtime_s(&timeinfo, &now);
+        strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", &timeinfo);
+    #elif defined(__GNUC__) && !defined(_WIN32)
+        tm timeinfo;
+        localtime_r(&now, &timeinfo);
+        strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", &timeinfo);
+    #else
+        #pragma warning(push)
+        #pragma warning(disable: 4996)
+        strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&now));
+        #pragma warning(pop)
+    #endif
     
     std::string filename = "csopesy-log_" + std::string(timestamp) + ".txt";
     std::ofstream file(filename);
@@ -831,7 +964,7 @@ void cmd_screen_view(const std::string& name) {
     while (viewing && is_running) {
         display_process_screen(process);
         
-        std::cout << "\n" << Colors::CYAN << name << "> " << Colors::RESET;
+        std::cout << "\n" << Colors::CYAN << name << "> " << Colors::RESET << std::flush;
         std::string input;
         std::getline(std::cin, input);
         
@@ -844,8 +977,7 @@ void cmd_screen_view(const std::string& name) {
         if (input == "exit") {
             viewing = false;
         }
-        
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        // If not exit, loop will refresh the screen automatically
     }
     
     display_main_ui();
@@ -996,11 +1128,21 @@ void process_command(const std::string& input) {
 void keyboard_handler_thread() {
     std::string line;
     while (is_running) {
-        gotoxy(10, layout.prompt_row);
+        // Position cursor right after the prompt and flush
+        gotoxy(10, layout.prompt_row);  // Position after "CSOPESY> "
+        std::cout << std::flush;
         
         if (!std::getline(std::cin, line)) {
             is_running = false;
             break;
+        }
+        
+        // Clear the input area (from column 10 onwards) to remove the typed command
+        {
+            std::lock_guard<std::mutex> lock(console_mutex);
+            printf("\033[%d;%dH", layout.prompt_row, 10);  // Move to input start (don't use gotoxy - it locks mutex!)
+            printf("%s", std::string(layout.screen_width - 10, ' ').c_str());  // Clear from here to end
+            fflush(stdout);
         }
         
         // Trim input
@@ -1018,7 +1160,7 @@ void keyboard_handler_thread() {
         
         // Redraw prompt
         gotoxy(1, layout.prompt_row);
-        std::cout << Colors::CYAN << "CSOPESY> " << Colors::RESET;
+        std::cout << Colors::CYAN << "CSOPESY> " << Colors::RESET << std::flush;
     }
 }
 
@@ -1026,7 +1168,7 @@ void keyboard_handler_thread() {
 void cpu_display_thread() {
     while (is_running) {
         update_cpu_display();
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
 }
 
@@ -1035,6 +1177,9 @@ void cpu_display_thread() {
 // ═══════════════════════════════════════════════════════════════════════
 
 int main() {
+    // Load configuration from file
+    load_config();
+    
     // Initialize terminal
     enable_ansi_on_windows();
     get_console_size(layout.screen_width, layout.screen_height);

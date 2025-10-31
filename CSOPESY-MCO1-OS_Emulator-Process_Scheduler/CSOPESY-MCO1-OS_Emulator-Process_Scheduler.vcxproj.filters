@@ -15,8 +15,13 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="CSOPESY-MCO1-OS_Emulator-Process_Scheduler.cpp">
+    <ClCompile Include="Group_9_MO1_OS_Emulator.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="os_emulator.exe">
+      <Filter>Source Files</Filter>
+    </None>
   </ItemGroup>
 </Project>
