@@ -22,11 +22,6 @@
     Linux/Mac:
         g++ -std=c++14 -pthread Group_9_MO1_OS_Emulator.cpp -o os_emulator
     
-    RUNNING:
-    --------
-    Windows: os_emulator.exe
-    Linux/Mac: ./os_emulator
-    
     AVAILABLE COMMANDS:
     -------------------
     1. initialize
