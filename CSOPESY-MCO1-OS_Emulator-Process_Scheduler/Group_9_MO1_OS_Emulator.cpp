@@ -51,7 +51,7 @@
        - Example: scheduler-start
 
     6. scheduler-stop
-       - Stops the scheduler from running
+       - Stops automatic process generation
        - Existing processes remain in queue
        - Example: scheduler-stop
 
@@ -767,7 +767,7 @@ std::unique_ptr<Scheduler> scheduler;
 std::queue<std::string> command_queue;
 std::mutex command_queue_mutex;
 std::condition_variable command_queue_cv;
-int global_process_counter = 1;
+std::atomic<int> global_process_counter{ 1 };
 
 // ═══════════════════════════════════════════════════════════════════════
 // SECTION 5: TERMINAL CONTROL FUNCTIONS
@@ -957,7 +957,7 @@ void display_help() {
         << "\n    - Begins automatic process generation every batch-process-freq seconds\n";
 
     std::cout << Colors::BRIGHT_YELLOW << "\n  scheduler-stop" << Colors::WHITE
-        << "\n    - Stops automatic process generation and the scheduler\n";
+        << "\n    - Stops automatic process generation only (scheduler continues running)\n";
 
     std::cout << Colors::BRIGHT_YELLOW << "\n  report-util" << Colors::WHITE
         << "\n    - Generates a CPU utilization report\n";
