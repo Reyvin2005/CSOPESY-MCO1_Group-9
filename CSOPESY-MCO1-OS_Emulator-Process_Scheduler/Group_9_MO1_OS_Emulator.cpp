@@ -128,6 +128,7 @@
 #include <ctime>
 #include <fstream>
 #include <random>
+#include <deque>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -235,11 +236,52 @@ public:
         FINISHED    // Completed execution
     };
 
+    // Instruction representation
+    enum class OpCode {
+        PRINT,
+        DECLARE,
+        ADD,
+        SUBTRACT,
+        SLEEP,
+        FOR_BEGIN,
+        FOR_END
+    };
+
+    struct Operand {
+        bool is_variable = true;           // true: variable name, false: immediate value
+        std::string var_name;              // when is_variable == true
+        uint16_t imm_value = 0;            // when is_variable == false
+    };
+
+    struct Instruction {
+        OpCode opcode;
+        // For PRINT: message_prefix (string) and optional var operand
+        std::string message_prefix;
+        bool has_var_in_msg = false;
+        Operand msg_var;
+        // For DECLARE: var name and value
+        std::string var_name;
+        uint16_t declare_value = 0;
+        // For arithmetic: dest, op1, op2
+        std::string dest_var;
+        Operand op1;
+        Operand op2;
+        // For SLEEP: ticks (uint8)
+        uint8_t sleep_ticks = 0;
+        // For FOR: repeats, matching indices resolved at runtime via stack
+        uint16_t for_repeats = 0;
+    };
+
+    struct LoopFrame {
+        int start_index;       // index of first instruction inside loop body
+        int end_index;         // index of FOR_END
+        uint16_t remaining;    // times left to execute body
+    };
+
     // Constructor: Creates a new process
-    Process(int id, const std::string& name, int total_instructions)
+    Process(int id, const std::string& name)
         : process_id(id),
         process_name(name),
-        total_commands(total_instructions),
         current_line(0),
         core_id(-1),
         state(READY) {
@@ -272,7 +314,7 @@ public:
         std::lock_guard<std::mutex> lock(process_mutex);
         return process_name;
     }
-    int get_total_commands() const { return total_commands; }
+    int get_total_commands() const { std::lock_guard<std::mutex> lock(process_mutex); return (int)program.size(); }
     int get_current_line() const {
         std::lock_guard<std::mutex> lock(process_mutex);
         return current_line;
@@ -300,15 +342,135 @@ public:
     // Execute one instruction
     void execute_instruction() {
         std::lock_guard<std::mutex> lock(process_mutex);
-        if (current_line < total_commands) {
+        if (state == FINISHED) return;
+
+        // Handle sleeping ticks (non-progressing, yields CPU)
+        if (sleep_ticks_remaining > 0) {
+            sleep_ticks_remaining--;
+            return; // do not advance current_line
+        }
+
+        if (current_line < 0 || current_line >= (int)program.size()) {
+            state = FINISHED;
+            return;
+        }
+
+        const Instruction& ins = program[current_line];
+
+        auto get_value = [&](const Operand& op) -> uint16_t {
+            if (op.is_variable) {
+                auto it = variables.find(op.var_name);
+                if (it == variables.end()) {
+                    variables[op.var_name] = 0; // auto-declare to 0
+                    return 0;
+                }
+                return it->second;
+            }
+            return op.imm_value;
+        };
+
+        auto clamp16 = [&](uint32_t v) -> uint16_t {
+            if (v > 0xFFFFu) return 0xFFFFu;
+            return (uint16_t)v;
+        };
+
+        switch (ins.opcode) {
+        case OpCode::PRINT: {
+            std::ostringstream out;
+            out << ins.message_prefix;
+            if (ins.has_var_in_msg) {
+                out << get_value(ins.msg_var);
+            }
+            push_log(out.str());
             current_line++;
+            break;
+        }
+        case OpCode::DECLARE: {
+            variables[ins.var_name] = ins.declare_value;
+            current_line++;
+            break;
+        }
+        case OpCode::ADD: {
+            uint32_t a = get_value(ins.op1);
+            uint32_t b = get_value(ins.op2);
+            variables[ins.dest_var] = clamp16(a + b);
+            current_line++;
+            break;
+        }
+        case OpCode::SUBTRACT: {
+            int32_t a = (int32_t)get_value(ins.op1);
+            int32_t b = (int32_t)get_value(ins.op2);
+            int32_t res = a - b;
+            if (res < 0) res = 0;
+            variables[ins.dest_var] = (uint16_t)res;
+            current_line++;
+            break;
+        }
+        case OpCode::SLEEP: {
+            sleep_ticks_remaining = ins.sleep_ticks; // begin sleeping next cycles
+            current_line++;
+            break;
+        }
+        case OpCode::FOR_BEGIN: {
+            // Find matching FOR_END by scanning forward (simple, as nesting depth is limited)
+            int depth = 1;
+            int match_idx = current_line + 1;
+            while (match_idx < (int)program.size() && depth > 0) {
+                if (program[match_idx].opcode == OpCode::FOR_BEGIN) depth++;
+                else if (program[match_idx].opcode == OpCode::FOR_END) depth--;
+                if (depth > 0) match_idx++;
+            }
+            if (match_idx >= (int)program.size()) {
+                // Malformed, finish
+                state = FINISHED;
+                return;
+            }
+            if (ins.for_repeats == 0) {
+                // Skip body entirely
+                current_line = match_idx + 1;
+                break;
+            }
+            if ((int)loop_stack.size() >= 3) {
+                // Exceeds max nesting, treat as no-op body skip
+                current_line = match_idx + 1;
+                break;
+            }
+            LoopFrame frame{ current_line + 1, match_idx, ins.for_repeats };
+            loop_stack.push_back(frame);
+            current_line = frame.start_index;
+            break;
+        }
+        case OpCode::FOR_END: {
+            if (loop_stack.empty()) {
+                // Malformed
+                current_line++;
+                break;
+            }
+            LoopFrame& frame = loop_stack.back();
+            if (current_line != frame.end_index) {
+                current_line++;
+                break;
+            }
+            if (frame.remaining > 1) {
+                frame.remaining--;
+                current_line = frame.start_index;
+            } else {
+                loop_stack.pop_back();
+                current_line++;
+            }
+            break;
+        }
+        }
+
+        if (current_line >= (int)program.size()) {
+            state = FINISHED;
         }
     }
 
     // Check if process is finished
     bool is_finished() const {
         std::lock_guard<std::mutex> lock(process_mutex);
-        return current_line >= total_commands;
+        return state == FINISHED || current_line >= (int)program.size();
     }
 
     // Get state as string
@@ -325,12 +487,64 @@ public:
 private:
     int process_id;
     std::string process_name;
-    int total_commands;
     int current_line;
     int core_id;
     State state;
     std::string timestamp;
     mutable std::mutex process_mutex;
+
+    // Instruction program and runtime state
+    std::vector<Instruction> program;
+    std::map<std::string, uint16_t> variables;
+    std::deque<std::string> screen_logs;
+    std::vector<LoopFrame> loop_stack;
+    uint8_t sleep_ticks_remaining{ 0 };
+
+public:
+    // Build a basic default program per spec
+    void build_default_program() {
+        std::lock_guard<std::mutex> lock(process_mutex);
+        program.clear();
+        loop_stack.clear();
+        variables.clear();
+        current_line = 0;
+        state = READY;
+
+        // PRINT("Hello world from <process_name>!")
+        Instruction p{}; p.opcode = OpCode::PRINT; p.message_prefix = std::string("Hello world from ") + process_name + "!"; p.has_var_in_msg = false;
+        program.push_back(p);
+
+        // DECLARE(x, 0)
+        Instruction d{}; d.opcode = OpCode::DECLARE; d.var_name = "x"; d.declare_value = 0; program.push_back(d);
+
+        // ADD(x, 5, 10)
+        Instruction a{}; a.opcode = OpCode::ADD; a.dest_var = "x"; a.op1 = Operand{ false, "", 5 }; a.op2 = Operand{ false, "", 10 }; program.push_back(a);
+
+        // PRINT("Value from: " + x)
+        Instruction p2{}; p2.opcode = OpCode::PRINT; p2.message_prefix = "Value from: "; p2.has_var_in_msg = true; p2.msg_var = Operand{ true, "x", 0 }; program.push_back(p2);
+
+        // SLEEP(2)
+        Instruction sl{}; sl.opcode = OpCode::SLEEP; sl.sleep_ticks = 2; program.push_back(sl);
+
+        // FOR ( body: ADD(x, x, 1) ; repeats=3 )
+        Instruction fb{}; fb.opcode = OpCode::FOR_BEGIN; fb.for_repeats = 3; program.push_back(fb);
+        Instruction ab{}; ab.opcode = OpCode::ADD; ab.dest_var = "x"; ab.op1 = Operand{ true, "x", 0 }; ab.op2 = Operand{ false, "", 1 }; program.push_back(ab);
+        Instruction fe{}; fe.opcode = OpCode::FOR_END; program.push_back(fe);
+    }
+
+    // Append a log line to be displayed when attached to screen
+    void push_log(const std::string& s) {
+        screen_logs.push_back(s);
+        // keep only recent 100 lines
+        if (screen_logs.size() > 100) screen_logs.pop_front();
+    }
+
+    // Drain logs for UI display
+    std::vector<std::string> drain_logs() {
+        std::vector<std::string> out(screen_logs.begin(), screen_logs.end());
+        screen_logs.clear();
+        return out;
+    }
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -356,9 +570,10 @@ public:
     }
 
     // Add a new process to the ready queue
-    void add_process(const std::string& name, int instructions) {
+    void add_process(const std::string& name, int /*instructions_unused*/) {
         std::lock_guard<std::mutex> lock(scheduler_mutex);
-        auto process = std::make_shared<Process>(next_process_id++, name, instructions);
+        auto process = std::make_shared<Process>(next_process_id++, name);
+        process->build_default_program();
         ready_queue.push(process);
         all_processes[name] = process;
         queue_cv.notify_one();
@@ -785,16 +1000,14 @@ void display_process_screen(std::shared_ptr<Process> process) {
     std::cout << Colors::CYAN << "Execution Log:" << Colors::RESET << "\n";
     std::cout << "-----------------------------------------------------\n";
 
-    // Show last 10 executed instructions
-    int start = (current - 10 >= 0) ? (current - 10) : 0;
-    for (int i = start; i < current && i < total; i++) {
-        std::cout << Colors::GREEN << "  [" << i << "] "
-            << Colors::WHITE << "Instruction executed" << Colors::RESET << "\n";
-    }
-
-    if (current < total) {
-        std::cout << Colors::YELLOW << "  [" << current << "] "
-            << Colors::WHITE << "Current instruction (executing...)" << Colors::RESET << "\n";
+    // Show newest logs produced by the process instructions (PRINT etc.)
+    auto logs = process->drain_logs();
+    if (logs.empty()) {
+        std::cout << Colors::WHITE << "  (no new output)" << Colors::RESET << "\n";
+    } else {
+        for (const auto& line : logs) {
+            std::cout << Colors::GREEN << "  > " << Colors::WHITE << line << Colors::RESET << "\n";
+        }
     }
 
     std::cout << "-----------------------------------------------------\n";
@@ -962,13 +1175,10 @@ void cmd_screen_create(const std::string& name) {
         return;
     }
 
-    // Generate random number of instructions
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(MIN_INS, MAX_INS);
-    int instructions = dis(gen);
-
-    scheduler->add_process(name, instructions);
+    // Create process with default program (instruction count now derived from program)
+    scheduler->add_process(name, 0);
+    auto p = scheduler->get_process(name);
+    int instructions = p ? p->get_total_commands() : 0;
     std::cout << Colors::BRIGHT_GREEN << "Process '" << name << "' created with "
         << instructions << " instructions.\n" << Colors::RESET;
 }
@@ -1060,17 +1270,17 @@ void cmd_scheduler_start() {
         int process_counter = 1;
         std::random_device rd;
         std::mt19937 gen(rd());
-        std::uniform_int_distribution<> dis(MIN_INS, MAX_INS);
+        std::uniform_int_distribution<> dis(0, 0);
 
         while (scheduler_autorun) {
             {
                 std::lock_guard<std::mutex> lock(batch_mutex);
                 std::string name = std::string("p") + (process_counter < 10 ? "0" : "") + std::to_string(process_counter);
-                int instructions = dis(gen);
+                int instructions = 0;
                 scheduler->add_process(name, instructions);
 
                 std::cout << Colors::GREEN << "Generated process " << name
-                    << " (" << instructions << " instructions)\n" << Colors::RESET;
+                    << " (" << scheduler->get_process(name)->get_total_commands() << " instructions)\n" << Colors::RESET;
 
                 process_counter++;
             }
