@@ -535,17 +535,40 @@ public:
 
     // Append a log line to be displayed when attached to screen
     void push_log(const std::string& s) {
-        screen_logs.push_back(s);
-        // keep only recent 100 lines
+        // Get current time
+        time_t now = time(nullptr);
+        char buffer[80];
+
+#if defined(_MSC_VER)
+        tm timeinfo;
+        localtime_s(&timeinfo, &now);
+        strftime(buffer, sizeof(buffer), "%m/%d/%Y   %I:%M:%S%p", &timeinfo);
+#elif defined(__GNUC__) && !defined(_WIN32)
+        tm timeinfo;
+        localtime_r(&now, &timeinfo);
+        strftime(buffer, sizeof(buffer), "%m/%d/%Y   %I:%M:%S%p", &timeinfo);
+#else
+#pragma warning(push)
+#pragma warning(disable: 4996)
+        strftime(buffer, sizeof(buffer), "%m/%d/%Y   %I:%M:%S%p", localtime(&now));
+#pragma warning(pop)
+#endif
+
+        std::ostringstream formatted;
+        formatted << "(" << buffer << ")  "
+            << "Core:" << (core_id >= 0 ? std::to_string(core_id) : "N/A")
+            << "  \"" << s << "\"";
+
+        screen_logs.push_back(formatted.str());
         if (screen_logs.size() > 100) screen_logs.pop_front();
     }
 
-    // Drain logs for UI display
-    std::vector<std::string> drain_logs() {
-        std::vector<std::string> out(screen_logs.begin(), screen_logs.end());
-        screen_logs.clear();
-        return out;
+    // Return all logs without clearing them
+    std::vector<std::string> get_logs() const {
+        std::lock_guard<std::mutex> lock(process_mutex);
+        return std::vector<std::string>(screen_logs.begin(), screen_logs.end());
     }
+
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1000,10 +1023,10 @@ void display_process_screen(std::shared_ptr<Process> process) {
     int total = process->get_total_commands();
 
     std::cout << Colors::CYAN << "Execution Log:" << Colors::RESET << "\n";
-    std::cout << "-----------------------------------------------------\n";
+    std::cout << "-----------------------------------------------------------------------------\n";
 
     // Show newest logs produced by the process instructions (PRINT etc.)
-    auto logs = process->drain_logs();
+    auto logs = process->get_logs();
     if (logs.empty()) {
         std::cout << Colors::WHITE << "  (no new output)" << Colors::RESET << "\n";
     }
@@ -1013,7 +1036,7 @@ void display_process_screen(std::shared_ptr<Process> process) {
         }
     }
 
-    std::cout << "-----------------------------------------------------\n";
+    std::cout << "-----------------------------------------------------------------------------\n";
 
     if (current >= total) {
         std::cout << Colors::BRIGHT_GREEN << "\n[FINISHED] Process finished!\n" << Colors::RESET;
