@@ -5,7 +5,7 @@
                         Barlaan, Bahir Benjamin C.
                         Co, Joshua Benedict B.
                         Tan, Reyvin Matthew T.
-    Version Date: November 4, 2025
+    Version Date: November 5, 2025
 
     ═══════════════════════════════════════════════════════════════════════
     HOW TO USE THIS OS EMULATOR:
@@ -535,17 +535,40 @@ public:
 
     // Append a log line to be displayed when attached to screen
     void push_log(const std::string& s) {
-        screen_logs.push_back(s);
-        // keep only recent 100 lines
+        // Get current time
+        time_t now = time(nullptr);
+        char buffer[80];
+
+#if defined(_MSC_VER)
+        tm timeinfo;
+        localtime_s(&timeinfo, &now);
+        strftime(buffer, sizeof(buffer), "%m/%d/%Y   %I:%M:%S%p", &timeinfo);
+#elif defined(__GNUC__) && !defined(_WIN32)
+        tm timeinfo;
+        localtime_r(&now, &timeinfo);
+        strftime(buffer, sizeof(buffer), "%m/%d/%Y   %I:%M:%S%p", &timeinfo);
+#else
+#pragma warning(push)
+#pragma warning(disable: 4996)
+        strftime(buffer, sizeof(buffer), "%m/%d/%Y   %I:%M:%S%p", localtime(&now));
+#pragma warning(pop)
+#endif
+
+        std::ostringstream formatted;
+        formatted << "(" << buffer << ")  "
+            << "Core:" << (core_id >= 0 ? std::to_string(core_id) : "N/A")
+            << "  \"" << s << "\"";
+
+        screen_logs.push_back(formatted.str());
         if (screen_logs.size() > 100) screen_logs.pop_front();
     }
 
-    // Drain logs for UI display
-    std::vector<std::string> drain_logs() {
-        std::vector<std::string> out(screen_logs.begin(), screen_logs.end());
-        screen_logs.clear();
-        return out;
+    // Return all logs without clearing them
+    std::vector<std::string> get_logs() const {
+        std::lock_guard<std::mutex> lock(process_mutex);
+        return std::vector<std::string>(screen_logs.begin(), screen_logs.end());
     }
+
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -615,9 +638,18 @@ public:
     void stop() {
         running = false;
         queue_cv.notify_all();
+
         if (scheduler_thread.joinable()) {
             scheduler_thread.join();
         }
+
+        // Join all process worker threads
+        for (auto& t : worker_threads) {
+            if (t.joinable()) {
+                t.join();
+            }
+        }
+        worker_threads.clear();
     }
 
     // Check if scheduler is running
@@ -642,6 +674,12 @@ public:
                 finished_processes++;
             }
         }
+    }
+
+    // Notifies the scheduler
+    void notify_all() {
+        std::lock_guard<std::mutex> lock(scheduler_mutex);
+        queue_cv.notify_all();
     }
 
 private:
@@ -697,25 +735,24 @@ private:
                 cycles_executed++;
                 std::this_thread::sleep_for(std::chrono::milliseconds(DELAYS_PER_EXEC));
             }
-
-            // If process is not finished, put it back in the queue
-            if (!process->is_finished() && running) {
-                std::lock_guard<std::mutex> lock(scheduler_mutex);
-                process->set_state(Process::READY);
-                process->set_core_id(-1);
-                ready_queue.push(process);
-                cpu_cores[core] = nullptr;
-                queue_cv.notify_one();
-                return; // Don't mark as finished yet
-            }
         }
 
-        // Mark as finished and free the core
-        process->set_state(Process::FINISHED);
-        process->set_core_id(-1);
-
-        std::lock_guard<std::mutex> lock(scheduler_mutex);
-        cpu_cores[core] = nullptr;
+        // If process is not finished, put it back in the queue (for RR)
+        if (!process->is_finished() && running && scheduler_type == "rr") {
+            std::lock_guard<std::mutex> lock(scheduler_mutex);
+            process->set_state(Process::READY);
+            process->set_core_id(-1);
+            ready_queue.push(process);
+            cpu_cores[core] = nullptr;
+            queue_cv.notify_one();
+        }
+        else {
+            // Mark finished and free the core
+            process->set_state(Process::FINISHED);
+            process->set_core_id(-1);
+            std::lock_guard<std::mutex> lock(scheduler_mutex);
+            cpu_cores[core] = nullptr;
+        }
     }
 
     int num_cores;
@@ -1025,10 +1062,10 @@ void display_process_screen(std::shared_ptr<Process> process) {
     int total = process->get_total_commands();
 
     std::cout << Colors::CYAN << "Execution Log:" << Colors::RESET << "\n";
-    std::cout << "-----------------------------------------------------\n";
+    std::cout << "-----------------------------------------------------------------------------\n";
 
     // Show newest logs produced by the process instructions (PRINT etc.)
-    auto logs = process->drain_logs();
+    auto logs = process->get_logs();
     if (logs.empty()) {
         std::cout << Colors::WHITE << "  (no new output)" << Colors::RESET << "\n";
     }
@@ -1038,7 +1075,7 @@ void display_process_screen(std::shared_ptr<Process> process) {
         }
     }
 
-    std::cout << "-----------------------------------------------------\n";
+    std::cout << "-----------------------------------------------------------------------------\n";
 
     if (current >= total) {
         std::cout << Colors::BRIGHT_GREEN << "\n[FINISHED] Process finished!\n" << Colors::RESET;
@@ -1108,8 +1145,11 @@ void generate_report() {
         return;
     }
 
-    int active, total, running, finished;
-    scheduler->get_stats(active, total, running, finished);
+    int active, total_cores, running, finished;
+    scheduler->get_stats(active, total_cores, running, finished);
+
+    auto processes = scheduler->get_all_processes();
+    size_t total_processes = processes.size();
 
     time_t now = time(nullptr);
     char timestamp[80];
@@ -1142,21 +1182,20 @@ void generate_report() {
     file << "=============================================\n";
     file << "Generated: " << timestamp << "\n\n";
 
-    file << "CPU Cores: " << total << "\n";
+    file << "CPU Cores: " << total_cores << "\n";
     file << "Active Cores: " << active << "\n";
-    file << "CPU Utilization: " << (total > 0 ? (active * 100.0 / total) : 0) << "%\n\n";
+    file << "CPU Utilization: " << (total_cores > 0 ? (active * 100.0 / total_cores) : 0) << "%\n\n";
     file << "CPU Ticks: " << scheduler->get_cpu_ticks() << "\n\n";
 
     file << "Process Statistics:\n";
     file << "-------------------\n";
+    file << "Total Processes: " << total_processes << "\n";
     file << "Running Processes: " << running << "\n";
-    file << "Finished Processes: " << finished << "\n";
-    file << "Total Processes: " << (running + finished) << "\n\n";
+    file << "Finished Processes: " << finished << "\n\n";
 
     file << "Process Details:\n";
     file << "----------------\n";
 
-    auto processes = scheduler->get_all_processes();
     for (auto& process : processes) {
         file << "\nProcess: " << process->get_name() << "\n";
         file << "  ID: " << process->get_id() << "\n";
@@ -1170,6 +1209,7 @@ void generate_report() {
 
     std::cout << Colors::BRIGHT_GREEN << "Report generated: " << filename << Colors::RESET << "\n";
 }
+
 
 // ═══════════════════════════════════════════════════════════════════════
 // SECTION 7: COMMAND HANDLERS
@@ -1390,8 +1430,13 @@ void cmd_scheduler_stop() {
 // Handle 'report-util' command
 void cmd_report_util() {
     if (!system_initialized) {
-        std::cout << Colors::RED << "Error: System not initialized. Run 'initialize' first.\n"
-            << Colors::RESET;
+        std::cout << Colors::RED << "Error: System not initialized. Run 'initialize' first.\n" << Colors::RESET;
+        return;
+    }
+
+    auto procs = scheduler->get_all_processes();
+    if (procs.empty()) {
+        std::cout << Colors::YELLOW << "No processes available to report.\n" << Colors::RESET;
         return;
     }
 
@@ -1467,6 +1512,9 @@ void process_command(const std::string& input) {
     }
     else if (cmd == "exit") {
         is_running = false;
+        scheduler_autorun = false;
+
+        if (scheduler) scheduler->notify_all();
     }
     else {
         std::cout << Colors::RED << "Unknown command: " << cmd << "\n"
@@ -1541,7 +1589,7 @@ int main() {
 	// Display welcome screen
 	display_welcome();
 
-    // Display initial UI
+    // Display UI
     display_main_ui();
 
     // Start CPU display update thread
@@ -1550,23 +1598,33 @@ int main() {
     // Run keyboard handler in main thread
     keyboard_handler_thread();
 
-    // Cleanup
+    // ==== SHUTDOWN SEQUENCE ====
+    is_running = false;
+    scheduler_autorun = false;
+
+    // Stop scheduler safely
     if (scheduler) {
         scheduler->stop();
     }
 
-    scheduler_autorun = false;
+    // Stop batch process generator
     if (batch_thread.joinable()) {
         batch_thread.join();
     }
 
+    // Stop CPU display updater
     if (cpu_thread.joinable()) {
         cpu_thread.join();
     }
 
+    // ==== CLEAN EXIT ====
     clear_screen();
-    std::cout << Colors::BRIGHT_RED << "CSOPESY OS Emulator shutting down...\n" << Colors::RESET;
-    std::cout << Colors::BRIGHT_YELLOW << "Thank you for using our system!\n" << Colors::RESET;
+    std::cout << Colors::BRIGHT_RED
+        << "CSOPESY OS Emulator shutting down...\n"
+        << Colors::RESET;
+    std::cout << Colors::BRIGHT_YELLOW
+        << "Thank you for using our system!\n"
+        << Colors::RESET;
 
     return 0;
 }
