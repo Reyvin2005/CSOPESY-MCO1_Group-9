@@ -200,7 +200,7 @@ void load_config() {
                 MAX_INS = std::stoi(value);
                 if (MAX_INS < MIN_INS) MAX_INS = MIN_INS;  // Max must be >= Min
             }
-            else if (key == "delays-per-exec") {
+            else if (key == "delays-per-exec" || key == "delay-per-exec") {
                 DELAYS_PER_EXEC = std::stoi(value);
                 if (DELAYS_PER_EXEC < 0) DELAYS_PER_EXEC = 0;  // Minimum 0ms delay
             }
@@ -519,21 +519,30 @@ public:
         Instruction d{}; d.opcode = OpCode::DECLARE; d.var_name = "x"; d.declare_value = 0; program.push_back(d);
 
         // ADD(x, 5, 10)
-        Instruction a{}; a.opcode = OpCode::ADD; a.dest_var = "x"; a.op1 = Operand{ false, "", 5 }; a.op2 = Operand{ false, "", 10 }; program.push_back(a);
+        Instruction a{}; a.opcode = OpCode::ADD; a.dest_var = "x"; 
+        a.op1.is_variable = false; a.op1.imm_value = 5;
+        a.op2.is_variable = false; a.op2.imm_value = 10;
+        program.push_back(a);
 
         // PRINT("Value from: " + x)
-        Instruction p2{}; p2.opcode = OpCode::PRINT; p2.message_prefix = "Value from: "; p2.has_var_in_msg = true; p2.msg_var = Operand{ true, "x", 0 }; program.push_back(p2);
+        Instruction p2{}; p2.opcode = OpCode::PRINT; p2.message_prefix = "Value from: "; p2.has_var_in_msg = true; 
+        p2.msg_var.is_variable = true; p2.msg_var.var_name = "x";
+        program.push_back(p2);
 
         // SLEEP(2)
         Instruction sl{}; sl.opcode = OpCode::SLEEP; sl.sleep_ticks = 2; program.push_back(sl);
 
         // FOR ( body: ADD(x, x, 1) ; repeats=3 )
         Instruction fb{}; fb.opcode = OpCode::FOR_BEGIN; fb.for_repeats = 3; program.push_back(fb);
-        Instruction ab{}; ab.opcode = OpCode::ADD; ab.dest_var = "x"; ab.op1 = Operand{ true, "x", 0 }; ab.op2 = Operand{ false, "", 1 }; program.push_back(ab);
+        Instruction ab{}; ab.opcode = OpCode::ADD; ab.dest_var = "x"; 
+        ab.op1.is_variable = true; ab.op1.var_name = "x";
+        ab.op2.is_variable = false; ab.op2.imm_value = 1;
+        program.push_back(ab);
         Instruction fe{}; fe.opcode = OpCode::FOR_END; program.push_back(fe);
     }
 
     // Build a random program with given instruction count range
+    // Following spec: alternating PRINT("Value from: " +x) and ADD(x, x, [1-10])
     void build_random_program(int min_ins, int max_ins) {
         std::lock_guard<std::mutex> lock(process_mutex);
         program.clear();
@@ -550,43 +559,33 @@ public:
         start.message_prefix = "Hello world from " + process_name + "!";
         program.push_back(start);
 
-        // Generate random instructions
-        for (int i = 1; i < num_ins; ++i) {
-            int choice = rand() % 5;
+        // Initialize variable x = 0 (required by spec)
+        Instruction declare_x{};
+        declare_x.opcode = OpCode::DECLARE;
+        declare_x.var_name = "x";
+        declare_x.declare_value = 0;
+        program.push_back(declare_x);
+
+        // Generate alternating PRINT and ADD instructions as per spec
+        // Pattern: PRINT("Value from: " + x), ADD(x, x, [1-10]), repeat
+        for (int i = 2; i < num_ins; ++i) {
             Instruction ins{};
-
-            switch (choice) {
-            case 0: // DECLARE(var, value)
-                ins.opcode = OpCode::DECLARE;
-                ins.var_name = "v" + std::to_string(i);
-                ins.declare_value = rand() % 100;
-                break;
-
-            case 1: // ADD(var, op1, op2)
-                ins.opcode = OpCode::ADD;
-                ins.dest_var = "x";
-                ins.op1 = Operand{ true, "x", 0 };
-                ins.op2 = Operand{ false, "", (uint16_t)(rand() % 10) };
-                break;
-
-            case 2: // SUBTRACT(var, op1, op2)
-                ins.opcode = OpCode::SUBTRACT;
-                ins.dest_var = "x";
-                ins.op1 = Operand{ true, "x", 0 };
-                ins.op2 = Operand{ false, "", (uint16_t)(rand() % 5) };
-                break;
-
-            case 3: // SLEEP(X)
-                ins.opcode = OpCode::SLEEP;
-                ins.sleep_ticks = (uint8_t)(rand() % 5 + 1);
-                break;
-
-            case 4: // PRINT("Value from: " + x)
+            
+            if (i % 2 == 0) {
+                // Even index: PRINT("Value from: " + x)
                 ins.opcode = OpCode::PRINT;
                 ins.message_prefix = "Value from: ";
                 ins.has_var_in_msg = true;
-                ins.msg_var = Operand{ true, "x", 0 };
-                break;
+                ins.msg_var.is_variable = true;
+                ins.msg_var.var_name = "x";
+            } else {
+                // Odd index: ADD(x, x, [1-10])
+                ins.opcode = OpCode::ADD;
+                ins.dest_var = "x";
+                ins.op1.is_variable = true;
+                ins.op1.var_name = "x";
+                ins.op2.is_variable = false;
+                ins.op2.imm_value = (uint16_t)(1 + rand() % 10); // Random 1-10
             }
 
             program.push_back(ins);
