@@ -882,6 +882,31 @@ void display_main_ui() {
     std::cout << Colors::CYAN << "CSOPESY> " << Colors::RESET;
 }
 
+// Display welcome screen
+void display_welcome() {
+    clear_screen();
+
+    std::cout << Colors::BOLD << Colors::BRIGHT_CYAN
+        << "=========================================\n"
+        << "Welcome to CSOPESY Emulator!\n"
+        << "\n"
+        << "Developers:\n"
+        << Colors::RESET << Colors::WHITE
+		<< "Alvarez, Ivan Antonio T. \n"
+        << "Barlaan, Bahir Benjamin C.\n"
+        << "Co, Joshua Benedict B.\n"
+		<< "Tan, Reyvin Matthew T.\n"
+        << "\n"
+        << Colors::BRIGHT_CYAN << "Last updated: " << Colors::YELLOW << "11-5-2025\n"
+        << Colors::BRIGHT_CYAN
+        << "=========================================\n"
+        << Colors::RESET;
+
+    std::cout << "\nPress Enter to continue..." << std::flush;
+    std::string dummy;
+    std::getline(std::cin, dummy);
+}
+
 // Update CPU utilization display
 void update_cpu_display() {
     if (scheduler && system_initialized) {
@@ -1071,6 +1096,9 @@ void display_process_list() {
     }
 
     std::cout << "-------------------------------------------------------------------------------------\n";
+    std::cout << "\nPress Enter to continue..." << std::flush;
+    std::string dummy;
+    std::getline(std::cin, dummy);
 }
 
 // Generate utilization report
@@ -1289,9 +1317,20 @@ void cmd_scheduler_start() {
                 // Add process to scheduler
                 scheduler->add_process(name, 0);
 
-                std::cout << Colors::GREEN << "Generated process " << name
-                    << " (" << scheduler->get_process(name)->get_total_commands()
-                    << " instructions)\n" << Colors::RESET;
+                // Output to proper area without overlapping command line
+                {
+                    std::lock_guard<std::mutex> console_lock(console_mutex);
+                    printf("\033[s");  // Save cursor position
+                    printf("\033[%d;%dH", layout.output_start_row, 1);  // Move to output area
+                    printf("\033[K");  // Clear line
+                    printf("%sGenerated: %s (%d instructions)%s",
+                        Colors::GREEN.c_str(),
+                        name.c_str(),
+                        scheduler->get_process(name)->get_total_commands(),
+                        Colors::RESET.c_str());
+                    printf("\033[u");  // Restore cursor position
+                    fflush(stdout);
+                }
             }
 
             // Sleep between process batches
@@ -1299,8 +1338,19 @@ void cmd_scheduler_start() {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
 
-        std::cout << Colors::BRIGHT_YELLOW << "Process generation stopped.\n" << Colors::RESET;
-        });
+        // Output stop message to proper area
+        {
+            std::lock_guard<std::mutex> console_lock(console_mutex);
+            printf("\033[s");  // Save cursor position
+            printf("\033[%d;%dH", layout.output_start_row, 1);  // Move to output area
+            printf("\033[K");  // Clear line
+            printf("%sProcess generation stopped.%s",
+                Colors::BRIGHT_YELLOW.c_str(),
+                Colors::RESET.c_str());
+            printf("\033[u");  // Restore cursor position
+            fflush(stdout);
+        }
+     });
 }
 
 
@@ -1487,6 +1537,9 @@ int main() {
     // Initialize terminal
     enable_ansi_on_windows();
     get_console_size(layout.screen_width, layout.screen_height);
+
+	// Display welcome screen
+	display_welcome();
 
     // Display initial UI
     display_main_ui();
