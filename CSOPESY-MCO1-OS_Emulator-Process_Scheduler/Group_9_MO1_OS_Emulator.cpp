@@ -533,6 +533,66 @@ public:
         Instruction fe{}; fe.opcode = OpCode::FOR_END; program.push_back(fe);
     }
 
+    // Build a random program with given instruction count range
+    void build_random_program(int min_ins, int max_ins) {
+        std::lock_guard<std::mutex> lock(process_mutex);
+        program.clear();
+        loop_stack.clear();
+        variables.clear();
+        current_line = 0;
+        state = READY;
+
+        int num_ins = min_ins + (rand() % (max_ins - min_ins + 1));
+
+        // Always start with a greeting
+        Instruction start{};
+        start.opcode = OpCode::PRINT;
+        start.message_prefix = "Hello world from " + process_name + "!";
+        program.push_back(start);
+
+        // Generate random instructions
+        for (int i = 1; i < num_ins; ++i) {
+            int choice = rand() % 5;
+            Instruction ins{};
+
+            switch (choice) {
+            case 0: // DECLARE(var, value)
+                ins.opcode = OpCode::DECLARE;
+                ins.var_name = "v" + std::to_string(i);
+                ins.declare_value = rand() % 100;
+                break;
+
+            case 1: // ADD(var, op1, op2)
+                ins.opcode = OpCode::ADD;
+                ins.dest_var = "x";
+                ins.op1 = Operand{ true, "x", 0 };
+                ins.op2 = Operand{ false, "", (uint16_t)(rand() % 10) };
+                break;
+
+            case 2: // SUBTRACT(var, op1, op2)
+                ins.opcode = OpCode::SUBTRACT;
+                ins.dest_var = "x";
+                ins.op1 = Operand{ true, "x", 0 };
+                ins.op2 = Operand{ false, "", (uint16_t)(rand() % 5) };
+                break;
+
+            case 3: // SLEEP(X)
+                ins.opcode = OpCode::SLEEP;
+                ins.sleep_ticks = (uint8_t)(rand() % 5 + 1);
+                break;
+
+            case 4: // PRINT("Value from: " + x)
+                ins.opcode = OpCode::PRINT;
+                ins.message_prefix = "Value from: ";
+                ins.has_var_in_msg = true;
+                ins.msg_var = Operand{ true, "x", 0 };
+                break;
+            }
+
+            program.push_back(ins);
+        }
+    }
+
     // Append a log line to be displayed when attached to screen
     void push_log(const std::string& s) {
         // Get current time
@@ -597,7 +657,7 @@ public:
     void add_process(const std::string& name, int /*instructions_unused*/) {
         std::lock_guard<std::mutex> lock(scheduler_mutex);
         auto process = std::make_shared<Process>(next_process_id++, name);
-        process->build_default_program();
+        process->build_random_program(MIN_INS, MAX_INS);
         ready_queue.push(process);
         all_processes[name] = process;
         queue_cv.notify_one();
@@ -1092,48 +1152,94 @@ void display_process_list() {
         return;
     }
 
+    int active, total, running, finished;
+    scheduler->get_stats(active, total, running, finished);
+    uint64_t ticks = scheduler->get_cpu_ticks();
+
+    // Compute CPU utilization %
+    double utilization = (total > 0) ? (active * 100.0 / total) : 0.0;
+
+    // HEADER SECTION
+    std::cout << Colors::BRIGHT_WHITE << "CPU utilization: "
+        << Colors::CYAN << std::fixed << std::setprecision(0)
+        << utilization << "%" << Colors::RESET << "\n";
+
+    std::cout << Colors::BRIGHT_WHITE << "Cores used: "
+        << Colors::GREEN << active << Colors::RESET << "\n";
+
+    std::cout << Colors::BRIGHT_WHITE << "Cores available: "
+        << Colors::YELLOW << (total - active) << Colors::RESET << "\n";
+
+    std::cout << Colors::BRIGHT_BLUE
+        << "-------------------------------------------------------------\n"
+        << Colors::RESET;
+
+    // PROCESS SECTION
     auto processes = scheduler->get_all_processes();
 
-    std::cout << Colors::BOLD << Colors::BRIGHT_CYAN << "\nProcess List:\n" << Colors::RESET;
-    std::cout << "-------------------------------------------------------------------------------------\n";
-    std::cout << std::left << std::setw(20) << "Name"
-        << std::setw(12) << "State"
-        << std::setw(8) << "Core"
-        << std::setw(15) << "Progress"
-        << "Created\n";
-    std::cout << "-------------------------------------------------------------------------------------\n";
+    std::vector<std::shared_ptr<Process>> running_procs;
+    std::vector<std::shared_ptr<Process>> finished_procs;
 
-    for (auto& process : processes) {
-        std::cout << std::left << std::setw(20) << process->get_name();
-
-        // State with color
-        std::string state = process->get_state_string();
-        if (state == "Running") {
-            std::cout << Colors::GREEN;
-        }
-        else if (state == "Finished") {
-            std::cout << Colors::YELLOW;
-        }
-        else {
-            std::cout << Colors::WHITE;
-        }
-        std::cout << std::setw(12) << state << Colors::RESET;
-
-        // Core
-        int core = process->get_core_id();
-        std::cout << std::setw(8) << (core >= 0 ? std::to_string(core) : "N/A");
-
-        // Progress
-        int current = process->get_current_line();
-        int total = process->get_total_commands();
-        std::cout << std::setw(15) << (std::to_string(current) + "/" + std::to_string(total));
-
-        // Timestamp
-        std::cout << process->get_timestamp() << "\n";
+    for (auto& p : processes) {
+        auto state = p->get_state();
+        if (state == Process::FINISHED)
+            finished_procs.push_back(p);
+        else
+            running_procs.push_back(p);
     }
 
-    std::cout << "-------------------------------------------------------------------------------------\n";
-    std::cout << "\nPress Enter to continue..." << std::flush;
+    // Sort alphabetically by name for consistent output
+    auto byName = [](auto& a, auto& b) {
+        return a->get_name() < b->get_name();
+        };
+    std::sort(running_procs.begin(), running_procs.end(), byName);
+    std::sort(finished_procs.begin(), finished_procs.end(), byName);
+
+    // RUNNING PROCESSES
+    std::cout << Colors::BRIGHT_WHITE << "Running processes:\n" << Colors::RESET;
+    if (running_procs.empty()) {
+        std::cout << Colors::WHITE << "  (none)\n";
+    }
+    else {
+        for (auto& p : running_procs) {
+            std::string core_display = (p->get_core_id() == -1)
+                ? "-"
+                : std::to_string(p->get_core_id());
+
+            std::cout << Colors::BRIGHT_CYAN
+                << std::left << std::setw(12) << p->get_name()
+                << Colors::RESET
+                << " (" << Colors::YELLOW << p->get_timestamp() << Colors::RESET << ")   "
+                << "Core: " << Colors::GREEN << core_display << Colors::RESET
+                << "   "
+                << Colors::WHITE << p->get_current_line()
+                << " / " << p->get_total_commands()
+                << Colors::RESET << "\n";
+        }
+    }
+
+    std::cout << "\n" << Colors::BRIGHT_WHITE << "Finished processes:\n" << Colors::RESET;
+    if (finished_procs.empty()) {
+        std::cout << Colors::WHITE << "  (none)\n";
+    }
+    else {
+        for (auto& p : finished_procs) {
+            std::cout << Colors::BRIGHT_CYAN
+                << std::left << std::setw(12) << p->get_name()
+                << Colors::RESET
+                << " (" << Colors::YELLOW << p->get_timestamp() << Colors::RESET << ")   "
+                << Colors::GREEN << "Finished" << Colors::RESET << "   "
+                << Colors::WHITE << p->get_total_commands()
+                << " / " << p->get_total_commands()
+                << Colors::RESET << "\n";
+        }
+    }
+
+    std::cout << Colors::BRIGHT_BLUE
+        << "-------------------------------------------------------------\n"
+        << Colors::RESET;
+
+    std::cout << Colors::WHITE << "Press Enter to continue..." << Colors::RESET << std::flush;
     std::string dummy;
     std::getline(std::cin, dummy);
 }
@@ -1338,59 +1444,68 @@ void cmd_scheduler_start() {
         << Colors::RESET;
 
     batch_thread = std::thread([]() {
+        uint64_t next_target = scheduler->get_cpu_ticks() + BATCH_PROCESS_FREQ;
+
         while (scheduler_autorun) {
-            {
-                std::lock_guard<std::mutex> lock(batch_mutex);
+            uint64_t current_ticks = scheduler->get_cpu_ticks();
 
-                std::ostringstream oss;
-                oss << "P" << std::setw(3) << std::setfill('0') << global_process_counter++;
-                std::string name = oss.str();
-
-                // Prevent accidental name duplication
-                while (scheduler->get_process(name)) {
-                    oss.str("");
-                    oss.clear();
-                    oss << "P" << std::setw(3) << std::setfill('0') << global_process_counter++;
-                    name = oss.str();
-                }
-
-                // Add process to scheduler
-                scheduler->add_process(name, 0);
-
-                // Output to proper area without overlapping command line
+            // Check if it's time to generate a new process
+            if (current_ticks >= next_target) {
                 {
-                    std::lock_guard<std::mutex> console_lock(console_mutex);
-                    printf("\033[s");  // Save cursor position
-                    printf("\033[%d;%dH", layout.output_start_row, 1);  // Move to output area
-                    printf("\033[K");  // Clear line
-                    printf("%sGenerated: %s (%d instructions)%s",
-                        Colors::GREEN.c_str(),
-                        name.c_str(),
-                        scheduler->get_process(name)->get_total_commands(),
-                        Colors::RESET.c_str());
-                    printf("\033[u");  // Restore cursor position
-                    fflush(stdout);
+                    std::lock_guard<std::mutex> lock(batch_mutex);
+
+                    std::ostringstream oss;
+                    oss << "P" << std::setw(3) << std::setfill('0') << global_process_counter++;
+                    std::string name = oss.str();
+
+                    // Ensure unique name
+                    while (scheduler->get_process(name)) {
+                        oss.str("");
+                        oss.clear();
+                        oss << "P" << std::setw(3) << std::setfill('0') << global_process_counter++;
+                        name = oss.str();
+                    }
+
+                    // Add process to scheduler
+                    scheduler->add_process(name, 0);
+
+                    // Console output (safe)
+                    {
+                        std::lock_guard<std::mutex> console_lock(console_mutex);
+                        printf("\033[s");  // Save cursor position
+                        printf("\033[%d;%dH", layout.output_start_row, 1);
+                        printf("\033[K");
+                        printf("%sGenerated: %s (%d instructions)%s",
+                            Colors::GREEN.c_str(),
+                            name.c_str(),
+                            scheduler->get_process(name)->get_total_commands(),
+                            Colors::RESET.c_str());
+                        printf("\033[u");
+                        fflush(stdout);
+                    }
                 }
+
+                // Set next generation tick target
+                next_target = current_ticks + BATCH_PROCESS_FREQ;
             }
 
-            // Sleep between process batches
-            for (int i = 0; i < BATCH_PROCESS_FREQ * 10 && scheduler_autorun; ++i)
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            // Light sleep to avoid busy waiting
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
 
-        // Output stop message to proper area
+        // Output stop message
         {
             std::lock_guard<std::mutex> console_lock(console_mutex);
-            printf("\033[s");  // Save cursor position
-            printf("\033[%d;%dH", layout.output_start_row, 1);  // Move to output area
-            printf("\033[K");  // Clear line
+            printf("\033[s");
+            printf("\033[%d;%dH", layout.output_start_row, 1);
+            printf("\033[K");
             printf("%sProcess generation stopped.%s",
                 Colors::BRIGHT_YELLOW.c_str(),
                 Colors::RESET.c_str());
-            printf("\033[u");  // Restore cursor position
+            printf("\033[u");
             fflush(stdout);
         }
-     });
+        });
 }
 
 
@@ -1579,6 +1694,9 @@ void cpu_display_thread() {
 // ═══════════════════════════════════════════════════════════════════════
 
 int main() {
+    // Seed random number generator
+    srand(static_cast<unsigned>(time(nullptr)));
+
     // Load configuration from file
     load_config();
 
