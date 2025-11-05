@@ -774,7 +774,7 @@ private:
 
             lock.unlock();
             cpu_ticks++; // simulate CPU tick increment
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }
 
