@@ -865,6 +865,7 @@ std::queue<std::string> command_queue;
 std::mutex command_queue_mutex;
 std::condition_variable command_queue_cv;
 std::atomic<int> global_process_counter{ 1 };
+std::atomic<bool> suspend_cpu_display{ false };
 
 // ═══════════════════════════════════════════════════════════════════════
 // SECTION 5: TERMINAL CONTROL FUNCTIONS
@@ -880,6 +881,18 @@ void enable_ansi_on_windows() {
     mode |= 0x0004; // ENABLE_VIRTUAL_TERMINAL_PROCESSING
     SetConsoleMode(hOut, mode);
 #endif
+}
+
+// Control terminal cursor visibility
+void set_cursor_visible(bool visible) {
+    std::lock_guard<std::mutex> lock(console_mutex);
+    if (visible) {
+        printf("\033[?25h");
+    }
+    else {
+        printf("\033[?25l");
+    }
+    fflush(stdout);
 }
 
 // Get current console size
@@ -977,10 +990,12 @@ void display_main_ui() {
     // Prompt
     gotoxy(1, layout.prompt_row);
     std::cout << Colors::CYAN << "CSOPESY> " << Colors::RESET;
+    set_cursor_visible(true);
 }
 
 // Display welcome screen
 void display_welcome() {
+    suspend_cpu_display = true;
     clear_screen();
 
     std::cout << Colors::BOLD << Colors::BRIGHT_CYAN
@@ -989,10 +1004,10 @@ void display_welcome() {
         << "\n"
         << "Developers:\n"
         << Colors::RESET << Colors::WHITE
-		<< "Alvarez, Ivan Antonio T. \n"
+        << "Alvarez, Ivan Antonio T. \n"
         << "Barlaan, Bahir Benjamin C.\n"
         << "Co, Joshua Benedict B.\n"
-		<< "Tan, Reyvin Matthew T.\n"
+        << "Tan, Reyvin Matthew T.\n"
         << "\n"
         << Colors::BRIGHT_CYAN << "Last updated: " << Colors::YELLOW << "11-5-2025\n"
         << Colors::BRIGHT_CYAN
@@ -1002,10 +1017,12 @@ void display_welcome() {
     std::cout << "\nPress Enter to continue..." << std::flush;
     std::string dummy;
     std::getline(std::cin, dummy);
+    suspend_cpu_display = false;
 }
 
 // Update CPU utilization display
 void update_cpu_display() {
+    if (suspend_cpu_display) return;
     if (scheduler && system_initialized) {
         static int last_active = -1, last_running = -1, last_finished = -1;
         static uint64_t last_ticks = 0;
@@ -1021,36 +1038,27 @@ void update_cpu_display() {
             last_finished = finished;
             last_ticks = ticks;
 
-            // Save cursor position
-            {
-                std::lock_guard<std::mutex> lock(console_mutex);
-                printf("\033[s");  // Save cursor position
-                fflush(stdout);
-            }
-
-            clear_line(layout.cpu_util_row + 1);
-            gotoxy(1, layout.cpu_util_row + 1);
-            std::cout << Colors::BRIGHT_WHITE << "CPU Utilization: " << Colors::CYAN
-                << active << "/" << total << " cores active" << Colors::RESET
-                << " | " << Colors::BRIGHT_WHITE << "Running: " << Colors::GREEN
-                << running << Colors::RESET
-                << " | " << Colors::BRIGHT_WHITE << "Finished: " << Colors::YELLOW
-                << finished << Colors::RESET
-                << " | " << Colors::BRIGHT_WHITE << "CPU Ticks: " << Colors::BRIGHT_CYAN
-                << ticks << Colors::RESET << std::flush;
-
-            // Restore cursor position
-            {
-                std::lock_guard<std::mutex> lock(console_mutex);
-                printf("\033[u");  // Restore cursor position
-                fflush(stdout);
-            }
+            std::lock_guard<std::mutex> lock(console_mutex);
+            printf("\033[s");  // Save cursor position
+            // Clear and redraw the CPU stats line atomically
+            printf("\033[%d;%dH", layout.cpu_util_row + 1, 1);
+            printf("%s", std::string(layout.screen_width, ' ').c_str());
+            printf("\033[%d;%dH", layout.cpu_util_row + 1, 1);
+            printf("%sCPU Utilization: %s%d/%d cores active%s | %sRunning: %s%d%s | %sFinished: %s%d%s | %sCPU Ticks: %s%llu%s",
+                Colors::BRIGHT_WHITE.c_str(),
+                Colors::CYAN.c_str(), active, total, Colors::RESET.c_str(),
+                Colors::BRIGHT_WHITE.c_str(), Colors::GREEN.c_str(), running, Colors::RESET.c_str(),
+                Colors::BRIGHT_WHITE.c_str(), Colors::YELLOW.c_str(), finished, Colors::RESET.c_str(),
+                Colors::BRIGHT_WHITE.c_str(), Colors::BRIGHT_CYAN.c_str(), (unsigned long long)ticks, Colors::RESET.c_str());
+            printf("\033[u");  // Restore cursor position
+            fflush(stdout);
         }
     }
 }
 
 // Display help
 void display_help() {
+    suspend_cpu_display = true;
     clear_screen();
 
     std::cout << Colors::BOLD << Colors::BRIGHT_CYAN
@@ -1099,6 +1107,7 @@ void display_help() {
     std::getline(std::cin, dummy);
 
     display_main_ui();
+    suspend_cpu_display = false;
 }
 
 // Display process screen
@@ -1151,6 +1160,8 @@ void display_process_list() {
         std::cout << Colors::RED << "Scheduler not initialized!\n" << Colors::RESET;
         return;
     }
+
+    suspend_cpu_display = true;
 
     int active, total, running, finished;
     scheduler->get_stats(active, total, running, finished);
@@ -1242,6 +1253,7 @@ void display_process_list() {
     std::cout << Colors::WHITE << "Press Enter to continue..." << Colors::RESET << std::flush;
     std::string dummy;
     std::getline(std::cin, dummy);
+    suspend_cpu_display = false;
 }
 
 // Generate utilization report
@@ -1383,6 +1395,7 @@ void cmd_screen_view(const std::string& name) {
     }
 
     // Enter process screen view
+    suspend_cpu_display = true; // pause background UI updates to avoid overlap
     bool viewing = true;
     while (viewing && is_running) {
         display_process_screen(process);
@@ -1409,6 +1422,7 @@ void cmd_screen_view(const std::string& name) {
     }
 
     display_main_ui();
+    suspend_cpu_display = false;
 }
 
 // Handle 'screen -ls' command
@@ -1704,8 +1718,8 @@ int main() {
     enable_ansi_on_windows();
     get_console_size(layout.screen_width, layout.screen_height);
 
-	// Display welcome screen
-	display_welcome();
+    // Display welcome screen
+    display_welcome();
 
     // Display UI
     display_main_ui();
