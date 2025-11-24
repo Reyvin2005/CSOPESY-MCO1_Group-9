@@ -1,0 +1,12 @@
+{
+    "files.associations": {
+        "*.dbclient-js": "javascript",
+        "*.ejs": "html",
+        "*.sqlbook": "sql",
+        "*.ndjson": "jsonl",
+        "*.rmd": "markdown",
+        "string": "cpp",
+        "ctime": "cpp",
+        "deque": "cpp"
+    }
+}

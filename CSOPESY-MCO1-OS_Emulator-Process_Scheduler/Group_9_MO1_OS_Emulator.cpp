@@ -1,11 +1,11 @@
 /*
     Course & Section: CSOPESY | S13
-    Assessment: MO1 - OS Emulator - Process Scheduler
+    Assessment: MO2 - OS Emulator - Multitasking OS with Memory Management
     Group 9 Developers: Alvarez, Ivan Antonio T.
                         Barlaan, Bahir Benjamin C.
                         Co, Joshua Benedict B.
                         Tan, Reyvin Matthew T.
-    Version Date: November 5, 2025
+    Version Date: November 23, 2025
 
     ═══════════════════════════════════════════════════════════════════════
     HOW TO USE THIS OS EMULATOR:
@@ -61,14 +61,29 @@
        - Saves to a text file
        - Example: report-util
 
-    8. clear
-       - Clears the screen and redraws the UI
-       - Example: clear
+    8. process-smi
+       - Shows process memory information
+       - Displays memory usage per process
+       - Example: process-smi
 
-    9. exit
-       - Exits the OS emulator
-       - All data will be lost
-       - Example: exit
+    9. vmstat
+       - Shows overall memory statistics
+       - Displays total, used, and free memory
+       - Example: vmstat
+
+    10. scheduler-test
+        - Runs scheduler test mode
+        - Generates test processes for evaluation
+        - Example: scheduler-test
+
+    11. clear
+        - Clears the screen and redraws the UI
+        - Example: clear
+
+    12. exit
+        - Exits the OS emulator
+        - All data will be lost
+        - Example: exit
 
     TYPICAL WORKFLOW:
     -----------------
@@ -101,11 +116,15 @@
     Parameters:
     - num-cpu: Number of CPU cores (default: 4)
     - scheduler: "fcfs" (First-Come-First-Served) or "rr" (Round-Robin)
-    - quantum-cycles: Time quantum for round-robin (default: 5)
-    - min-ins: Minimum instructions per process (default: 100)
-    - max-ins: Maximum instructions per process (default: 1000)
-    - delays-per-exec: Delay in ms per instruction (default: 100)
-    - batch-process-freq: Frequency (in seconds) between automatic process creation (default: 3)
+    - quantum-cycles: Time quantum for round-robin in instruction cycles (default: 5)
+    - batch-process-freq: Frequency (in cycles) between automatic process creation (default: 1)
+    - min-ins: Minimum instructions per process (default: 1000)
+    - max-ins: Maximum instructions per process (default: 2000)
+    - delay-per-exec: Delay in ms per instruction (default: 0)
+    - max-overall-mem: Maximum overall memory in KB (default: 65536)
+    - mem-per-frame: Memory per frame in KB (default: 2048)
+    - min-mem-per-proc: Minimum memory per process in KB (default: 2048)
+    - max-mem-per-proc: Maximum memory per process in KB (default: 65536)
 
     If config.txt is not found, default values will be used.
 
@@ -160,20 +179,24 @@ namespace Colors {
 // System configuration (loaded from config.txt or default values)
 int NUM_CPU = 4;                          // Number of CPU cores
 std::string SCHEDULER_TYPE = "fcfs";      // "fcfs" or "rr"
-int QUANTUM_CYCLES = 5;                   // Time quantum for round-robin
-int MIN_INS = 100;                        // Minimum instructions per process
-int MAX_INS = 1000;                       // Maximum instructions per process
-int BATCH_PROCESS_FREQ = 3;               // Generate process every N seconds
-int DELAYS_PER_EXEC = 100;                // Delay in ms per instruction execution
+int QUANTUM_CYCLES = 5;                   // Time quantum for round-robin (in instruction cycles)
+int MIN_INS = 1000;                       // Minimum instructions per process
+int MAX_INS = 2000;                       // Maximum instructions per process
+int BATCH_PROCESS_FREQ = 1;               // Generate process every N cycles
+int DELAYS_PER_EXEC = 0;                  // Delay in ms per instruction execution
+size_t MAX_OVERALL_MEM = 65536;           // Maximum overall memory in KB
+size_t MEM_PER_FRAME = 2048;              // Memory per frame in KB
+size_t MIN_MEM_PER_PROC = 2048;           // Minimum memory per process in KB
+size_t MAX_MEM_PER_PROC = 65536;          // Maximum memory per process in KB
 
 // Function to load configuration from config.txt
 void load_config() {
     std::ifstream config_file("config.txt");
     if (!config_file.is_open()) {
         std::cerr << "Warning: config.txt not found. Using default values.\n";
+        std::cerr << "Looking for config.txt in current directory.\n";
         return;
     }
-
     std::string line;
     while (std::getline(config_file, line)) {
         std::istringstream iss(line);
@@ -207,6 +230,22 @@ void load_config() {
             else if (key == "batch-process-freq") {
                 BATCH_PROCESS_FREQ = std::stoi(value);
                 if (BATCH_PROCESS_FREQ < 1) BATCH_PROCESS_FREQ = 1;
+            }
+            else if (key == "max-overall-mem") {
+                MAX_OVERALL_MEM = std::stoull(value);
+                if (MAX_OVERALL_MEM < 1024) MAX_OVERALL_MEM = 1024;
+            }
+            else if (key == "mem-per-frame") {
+                MEM_PER_FRAME = std::stoull(value);
+                if (MEM_PER_FRAME < 1) MEM_PER_FRAME = 1;
+            }
+            else if (key == "min-mem-per-proc") {
+                MIN_MEM_PER_PROC = std::stoull(value);
+                if (MIN_MEM_PER_PROC < 1) MIN_MEM_PER_PROC = 1;
+            }
+            else if (key == "max-mem-per-proc") {
+                MAX_MEM_PER_PROC = std::stoull(value);
+                if (MAX_MEM_PER_PROC < MIN_MEM_PER_PROC) MAX_MEM_PER_PROC = MIN_MEM_PER_PROC;
             }
         }
         catch (const std::exception& e) {
@@ -279,12 +318,14 @@ public:
     };
 
     // Constructor: Creates a new process
-    Process(int id, const std::string& name)
+    Process(int id, const std::string& name, size_t mem_required)
         : process_id(id),
         process_name(name),
         current_line(0),
         core_id(-1),
-        state(READY) {
+        state(READY),
+        memory_required(mem_required),
+        num_pages_required(0) {
 
         time_t now = time(nullptr);
         char buffer[80];
@@ -337,6 +378,33 @@ public:
     void set_state(State s) {
         std::lock_guard<std::mutex> lock(process_mutex);
         state = s;
+    }
+
+    // Memory management getters/setters
+    size_t get_memory_required() const {
+        std::lock_guard<std::mutex> lock(process_mutex);
+        return memory_required;
+    }
+    size_t get_num_pages_required() const {
+        std::lock_guard<std::mutex> lock(process_mutex);
+        return num_pages_required;
+    }
+    void set_num_pages_required(size_t n) {
+        std::lock_guard<std::mutex> lock(process_mutex);
+        num_pages_required = n;
+    }
+    void set_allocated_frames(const std::vector<size_t>& frames) {
+        std::lock_guard<std::mutex> lock(process_mutex);
+        allocated_frames = frames;
+        time_allocated = time(nullptr);
+    }
+    std::vector<size_t> get_allocated_frames() const {
+        std::lock_guard<std::mutex> lock(process_mutex);
+        return allocated_frames;
+    }
+    bool has_memory_allocated() const {
+        std::lock_guard<std::mutex> lock(process_mutex);
+        return !allocated_frames.empty();
     }
 
     // Execute one instruction
@@ -501,6 +569,12 @@ private:
     std::vector<LoopFrame> loop_stack;
     uint8_t sleep_ticks_remaining{ 0 };
 
+    // Memory management
+    size_t memory_required;           // Total memory required by process in KB
+    size_t num_pages_required;        // Number of pages needed
+    std::vector<size_t> allocated_frames;  // Frame indices allocated to this process
+    time_t time_allocated;            // When memory was allocated
+
 public:
     // Build a basic default program per spec
     void build_default_program() {
@@ -631,33 +705,126 @@ public:
 };
 
 // ═══════════════════════════════════════════════════════════════════════
-// SECTION 3: SCHEDULER CLASS
+// SECTION 3: MEMORY MANAGER CLASS
+// ═══════════════════════════════════════════════════════════════════════
+
+/*
+    MemoryManager Class:
+    - Manages memory allocation using paging
+    - Tracks free and used frames
+    - Implements flat memory allocation (process gets all frames at once)
+*/
+class MemoryManager {
+public:
+    MemoryManager(size_t total_memory_kb, size_t frame_size_kb)
+        : total_memory(total_memory_kb),
+        frame_size(frame_size_kb),
+        num_frames(total_memory_kb / frame_size_kb) {
+
+        // Initialize all frames as free
+        for (size_t i = 0; i < num_frames; ++i) {
+            free_frames.push_back(i);
+        }
+    }
+
+    // Allocate memory for a process (flat allocation - all at once)
+    bool allocate(std::shared_ptr<Process> process) {
+        std::lock_guard<std::mutex> lock(memory_mutex);
+
+        size_t mem_required = process->get_memory_required();
+        size_t pages_needed = (mem_required + frame_size - 1) / frame_size;
+        process->set_num_pages_required(pages_needed);
+
+        // Check if enough free frames
+        if (free_frames.size() < pages_needed) {
+            return false;  // Not enough memory
+        }
+
+        // Allocate frames
+        std::vector<size_t> allocated;
+        for (size_t i = 0; i < pages_needed; ++i) {
+            size_t frame = free_frames.front();
+            free_frames.pop_front();
+            allocated.push_back(frame);
+            frame_map[frame] = process->get_name();
+        }
+
+        process->set_allocated_frames(allocated);
+        return true;
+    }
+
+    // Deallocate memory for a process
+    void deallocate(std::shared_ptr<Process> process) {
+        std::lock_guard<std::mutex> lock(memory_mutex);
+
+        auto frames = process->get_allocated_frames();
+        for (size_t frame : frames) {
+            frame_map.erase(frame);
+            free_frames.push_back(frame);
+        }
+
+        process->set_allocated_frames({});  // Clear allocation
+    }
+
+    // Get memory statistics
+    void get_stats(size_t& total, size_t& used, size_t& free) {
+        std::lock_guard<std::mutex> lock(memory_mutex);
+        total = total_memory;
+        free = free_frames.size() * frame_size;
+        used = total - free;
+    }
+
+    // Get number of free frames
+    size_t get_free_frame_count() const {
+        std::lock_guard<std::mutex> lock(memory_mutex);
+        return free_frames.size();
+    }
+
+    // Get external fragmentation (KB)
+    size_t get_external_fragmentation() const {
+        std::lock_guard<std::mutex> lock(memory_mutex);
+        return free_frames.size() * frame_size;
+    }
+
+private:
+    size_t total_memory;           // Total memory in KB
+    size_t frame_size;             // Frame size in KB
+    size_t num_frames;             // Total number of frames
+    std::deque<size_t> free_frames;  // List of free frame indices
+    std::map<size_t, std::string> frame_map;  // Frame -> Process name mapping
+    mutable std::mutex memory_mutex;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// SECTION 4: SCHEDULER CLASS
 // ═══════════════════════════════════════════════════════════════════════
 
 /*
     Scheduler Class:
     - Manages process queue and CPU cores
     - Implements FCFS or Round-Robin scheduling
+    - Integrates with MemoryManager for memory allocation
     - Runs in separate thread
 */
 class Scheduler {
 public:
-    Scheduler(int num_cores, const std::string& type, int quantum)
+    Scheduler(int num_cores, const std::string& type, int quantum, std::shared_ptr<MemoryManager> mem_mgr)
         : num_cores(num_cores),
         scheduler_type(type),
         quantum_cycles(quantum),
         running(false),
-        next_process_id(0) {
+        next_process_id(0),
+        memory_manager(mem_mgr) {
 
         cpu_cores.resize(num_cores, nullptr);
     }
 
     // Add a new process to the ready queue
-    void add_process(const std::string& name, int /*instructions_unused*/) {
+    void add_process(const std::string& name, size_t mem_required) {
         std::lock_guard<std::mutex> lock(scheduler_mutex);
-        auto process = std::make_shared<Process>(next_process_id++, name);
+        auto process = std::make_shared<Process>(next_process_id++, name, mem_required);
         process->build_random_program(MIN_INS, MAX_INS);
-        ready_queue.push(process);
+        ready_queue.push_back(process);
         all_processes[name] = process;
         queue_cv.notify_one();
     }
@@ -759,7 +926,16 @@ private:
                 // If core is free and queue has processes
                 if (cpu_cores[core] == nullptr && !ready_queue.empty()) {
                     auto process = ready_queue.front();
-                    ready_queue.pop();
+                    ready_queue.pop_front();
+
+                    // Try to allocate memory if not already allocated
+                    if (!process->has_memory_allocated()) {
+                        if (!memory_manager->allocate(process)) {
+                            // Cannot allocate memory, put back at end of queue
+                            ready_queue.push_back(process);
+                            continue;
+                        }
+                    }
 
                     cpu_cores[core] = process;
                     process->set_core_id(core);
@@ -787,11 +963,11 @@ private:
             }
         }
         else if (scheduler_type == "rr") {
-            // Round-Robin: Execute for quantum cycles, then requeue if not finished
-            int cycles_executed = 0;
-            while (!process->is_finished() && running && cycles_executed < quantum_cycles) {
+            // Round-Robin: Execute for quantum instruction cycles, then requeue if not finished
+            int instructions_executed = 0;
+            while (!process->is_finished() && running && instructions_executed < quantum_cycles) {
                 process->execute_instruction();
-                cycles_executed++;
+                instructions_executed++;
                 std::this_thread::sleep_for(std::chrono::milliseconds(DELAYS_PER_EXEC));
             }
         }
@@ -801,14 +977,20 @@ private:
             std::lock_guard<std::mutex> lock(scheduler_mutex);
             process->set_state(Process::READY);
             process->set_core_id(-1);
-            ready_queue.push(process);
+            ready_queue.push_back(process);
             cpu_cores[core] = nullptr;
             queue_cv.notify_one();
         }
         else {
-            // Mark finished and free the core
+            // Mark finished and free the core and memory
             process->set_state(Process::FINISHED);
             process->set_core_id(-1);
+
+            // Deallocate memory
+            if (process->has_memory_allocated()) {
+                memory_manager->deallocate(process);
+            }
+
             std::lock_guard<std::mutex> lock(scheduler_mutex);
             cpu_cores[core] = nullptr;
         }
@@ -820,7 +1002,7 @@ private:
     std::atomic<bool> running;
     int next_process_id;
 
-    std::queue<std::shared_ptr<Process>> ready_queue;
+    std::deque<std::shared_ptr<Process>> ready_queue;  // Changed from queue to deque for RR
     std::vector<std::shared_ptr<Process>> cpu_cores;
     std::vector<std::thread> worker_threads;
     std::map<std::string, std::shared_ptr<Process>> all_processes;
@@ -829,10 +1011,11 @@ private:
     std::condition_variable queue_cv;
     std::atomic<uint64_t> cpu_ticks{ 0 };
     std::thread scheduler_thread;
+    std::shared_ptr<MemoryManager> memory_manager;
 };
 
 // ═══════════════════════════════════════════════════════════════════════
-// SECTION 4: CONSOLE UI MANAGEMENT
+// SECTION 5: CONSOLE UI MANAGEMENT
 // ═══════════════════════════════════════════════════════════════════════
 
 /*
@@ -860,6 +1043,7 @@ std::thread batch_thread;
 std::mutex batch_mutex;
 std::mutex console_mutex;
 std::unique_ptr<Scheduler> scheduler;
+std::shared_ptr<MemoryManager> memory_manager;
 std::queue<std::string> command_queue;
 std::mutex command_queue_mutex;
 std::condition_variable command_queue_cv;
@@ -867,7 +1051,7 @@ std::atomic<int> global_process_counter{ 1 };
 std::atomic<bool> suspend_cpu_display{ false };
 
 // ═══════════════════════════════════════════════════════════════════════
-// SECTION 5: TERMINAL CONTROL FUNCTIONS
+// SECTION 6: TERMINAL CONTROL FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════
 
 // Enable ANSI colors on Windows
@@ -939,7 +1123,7 @@ void clear_line(int row) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// SECTION 6: UI DISPLAY FUNCTIONS
+// SECTION 7: UI DISPLAY FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════
 
 // Display the main UI
@@ -1090,6 +1274,15 @@ void display_help() {
 
     std::cout << Colors::BRIGHT_YELLOW << "\n  report-util" << Colors::WHITE
         << "\n    - Generates a CPU utilization report\n";
+
+    std::cout << Colors::BRIGHT_YELLOW << "\n  process-smi" << Colors::WHITE
+        << "\n    - Shows process memory information\n";
+
+    std::cout << Colors::BRIGHT_YELLOW << "\n  vmstat" << Colors::WHITE
+        << "\n    - Shows overall memory statistics\n";
+
+    std::cout << Colors::BRIGHT_YELLOW << "\n  scheduler-test" << Colors::WHITE
+        << "\n    - Runs scheduler test mode\n";
 
     std::cout << Colors::BRIGHT_YELLOW << "\n  clear" << Colors::WHITE
         << "\n    - Clears the screen\n";
@@ -1327,9 +1520,155 @@ void generate_report() {
     std::cout << Colors::BRIGHT_GREEN << "Report generated: " << filename << Colors::RESET << "\n";
 }
 
+// Display process memory information (process-smi)
+void display_process_smi() {
+    if (!scheduler || !memory_manager) {
+        std::cout << Colors::RED << "System not initialized!\n" << Colors::RESET;
+        return;
+    }
+
+    suspend_cpu_display = true;
+
+    size_t total_mem, used_mem, free_mem;
+    memory_manager->get_stats(total_mem, used_mem, free_mem);
+
+    auto processes = scheduler->get_all_processes();
+
+    std::cout << Colors::BRIGHT_CYAN << "\n";
+    std::cout << "───────────────────────────────────────────────────────────────────────────────────\n";
+    std::cout << " PROCESS-SMI\n";
+    std::cout << "───────────────────────────────────────────────────────────────────────────────────\n";
+    std::cout << Colors::RESET;
+
+    // CPU utilization
+    int active, total_cores, running, finished;
+    scheduler->get_stats(active, total_cores, running, finished);
+    double cpu_util = (total_cores > 0) ? (active * 100.0 / total_cores) : 0.0;
+
+    std::cout << Colors::BRIGHT_WHITE << " | " << std::left << std::setw(38) << "CPU-Util"
+        << Colors::CYAN << std::fixed << std::setprecision(1) << cpu_util << "%"
+        << Colors::RESET << "\n";
+
+    // Memory utilization
+    double mem_util = (total_mem > 0) ? (used_mem * 100.0 / total_mem) : 0.0;
+    std::cout << Colors::BRIGHT_WHITE << " | " << std::left << std::setw(38) << "Memory Usage"
+        << Colors::CYAN << used_mem << " KB / " << total_mem << " KB"
+        << Colors::RESET << "\n";
+
+    std::cout << Colors::BRIGHT_WHITE << " | " << std::left << std::setw(38) << "Memory Util"
+        << Colors::CYAN << std::fixed << std::setprecision(1) << mem_util << "%"
+        << Colors::RESET << "\n";
+
+    std::cout << Colors::BRIGHT_CYAN;
+    std::cout << "───────────────────────────────────────────────────────────────────────────────────\n";
+    std::cout << Colors::RESET;
+
+    // Running processes header
+    std::cout << Colors::BRIGHT_WHITE << " Running processes and memory usage:\n";
+    std::cout << " ─────────────────────────────────────────────────────────────────────────────────\n";
+    std::cout << Colors::RESET;
+
+    // Sort processes
+    std::vector<std::shared_ptr<Process>> running_procs;
+    for (auto& p : processes) {
+        if (p->get_state() != Process::FINISHED) {
+            running_procs.push_back(p);
+        }
+    }
+
+    std::sort(running_procs.begin(), running_procs.end(), [](auto& a, auto& b) {
+        return a->get_name() < b->get_name();
+        });
+
+    if (running_procs.empty()) {
+        std::cout << Colors::WHITE << "  No running processes.\n";
+    }
+    else {
+        for (auto& p : running_procs) {
+            size_t mem = p->get_memory_required();
+            size_t pages = p->get_num_pages_required();
+
+            std::cout << Colors::BRIGHT_GREEN << "  " << std::left << std::setw(15) << p->get_name()
+                << Colors::WHITE << "  Memory: " << Colors::CYAN << std::setw(8) << mem << " KB"
+                << Colors::WHITE << "  Pages: " << Colors::YELLOW << pages
+                << Colors::RESET << "\n";
+        }
+    }
+
+    std::cout << Colors::BRIGHT_CYAN;
+    std::cout << "───────────────────────────────────────────────────────────────────────────────────\n";
+    std::cout << Colors::RESET;
+
+    std::cout << Colors::WHITE << "\nPress Enter to continue..." << Colors::RESET << std::flush;
+    std::string dummy;
+    std::getline(std::cin, dummy);
+    suspend_cpu_display = false;
+}
+
+// Display memory statistics (vmstat)
+void display_vmstat() {
+    if (!memory_manager) {
+        std::cout << Colors::RED << "Memory manager not initialized!\n" << Colors::RESET;
+        return;
+    }
+
+    suspend_cpu_display = true;
+
+    size_t total_mem, used_mem, free_mem;
+    memory_manager->get_stats(total_mem, used_mem, free_mem);
+
+    size_t num_pages_total = total_mem / MEM_PER_FRAME;
+    size_t num_pages_used = used_mem / MEM_PER_FRAME;
+    size_t num_pages_free = memory_manager->get_free_frame_count();
+
+    std::cout << Colors::BRIGHT_CYAN << "\n";
+    std::cout << "───────────────────────────────────────────────────────────────────────────────────\n";
+    std::cout << " VMSTAT - MEMORY STATISTICS\n";
+    std::cout << "───────────────────────────────────────────────────────────────────────────────────\n";
+    std::cout << Colors::RESET;
+
+    std::cout << Colors::BRIGHT_WHITE << " Total Memory:        " << Colors::CYAN
+        << std::setw(10) << total_mem << " KB" << Colors::RESET << "\n";
+
+    std::cout << Colors::BRIGHT_WHITE << " Used Memory:         " << Colors::GREEN
+        << std::setw(10) << used_mem << " KB" << Colors::RESET << "\n";
+
+    std::cout << Colors::BRIGHT_WHITE << " Free Memory:         " << Colors::YELLOW
+        << std::setw(10) << free_mem << " KB" << Colors::RESET << "\n";
+
+    double util = (total_mem > 0) ? (used_mem * 100.0 / total_mem) : 0.0;
+    std::cout << Colors::BRIGHT_WHITE << " Memory Utilization:  " << Colors::CYAN
+        << std::fixed << std::setprecision(2) << util << "%" << Colors::RESET << "\n";
+
+    std::cout << Colors::BRIGHT_CYAN;
+    std::cout << "───────────────────────────────────────────────────────────────────────────────────\n";
+    std::cout << Colors::RESET;
+
+    std::cout << Colors::BRIGHT_WHITE << " Frame Size:          " << Colors::CYAN
+        << std::setw(10) << MEM_PER_FRAME << " KB" << Colors::RESET << "\n";
+
+    std::cout << Colors::BRIGHT_WHITE << " Total Frames:        " << Colors::CYAN
+        << std::setw(10) << num_pages_total << Colors::RESET << "\n";
+
+    std::cout << Colors::BRIGHT_WHITE << " Used Frames:         " << Colors::GREEN
+        << std::setw(10) << num_pages_used << Colors::RESET << "\n";
+
+    std::cout << Colors::BRIGHT_WHITE << " Free Frames:         " << Colors::YELLOW
+        << std::setw(10) << num_pages_free << Colors::RESET << "\n";
+
+    std::cout << Colors::BRIGHT_CYAN;
+    std::cout << "───────────────────────────────────────────────────────────────────────────────────\n";
+    std::cout << Colors::RESET;
+
+    std::cout << Colors::WHITE << "\nPress Enter to continue..." << Colors::RESET << std::flush;
+    std::string dummy;
+    std::getline(std::cin, dummy);
+    suspend_cpu_display = false;
+}
+
 
 // ═══════════════════════════════════════════════════════════════════════
-// SECTION 7: COMMAND HANDLERS
+// SECTION 8: COMMAND HANDLERS
 // ═══════════════════════════════════════════════════════════════════════
 
 // Handle 'initialize' command
@@ -1339,13 +1678,20 @@ void cmd_initialize() {
         return;
     }
 
-    scheduler = std::make_unique<Scheduler>(NUM_CPU, SCHEDULER_TYPE, QUANTUM_CYCLES);
+    // Initialize memory manager
+    memory_manager = std::make_shared<MemoryManager>(MAX_OVERALL_MEM, MEM_PER_FRAME);
+
+    // Initialize scheduler with memory manager
+    scheduler = std::make_unique<Scheduler>(NUM_CPU, SCHEDULER_TYPE, QUANTUM_CYCLES, memory_manager);
     scheduler->start();
     system_initialized = true;
 
     std::cout << Colors::BRIGHT_GREEN << "OS Emulator initialized successfully!\n" << Colors::RESET;
     std::cout << Colors::CYAN << "Scheduler type: " << SCHEDULER_TYPE << "\n";
-    std::cout << "CPU cores: " << NUM_CPU << "\n" << Colors::RESET;
+    std::cout << "CPU cores: " << NUM_CPU << "\n";
+    std::cout << "Quantum cycles: " << QUANTUM_CYCLES << "\n";
+    std::cout << "Memory: " << MAX_OVERALL_MEM << " KB\n";
+    std::cout << "Frame size: " << MEM_PER_FRAME << " KB\n" << Colors::RESET;
 }
 
 // Handle 'screen -s <name>' command
@@ -1363,12 +1709,15 @@ void cmd_screen_create(const std::string& name) {
         return;
     }
 
-    // Create process with default program (instruction count now derived from program)
-    scheduler->add_process(name, 0);
+    // Generate random memory requirement
+    size_t mem_required = MIN_MEM_PER_PROC + (rand() % (MAX_MEM_PER_PROC - MIN_MEM_PER_PROC + 1));
+
+    // Create process with memory requirement
+    scheduler->add_process(name, mem_required);
     auto p = scheduler->get_process(name);
     int instructions = p ? p->get_total_commands() : 0;
     std::cout << Colors::BRIGHT_GREEN << "Process '" << name << "' created with "
-        << instructions << " instructions.\n" << Colors::RESET;
+        << instructions << " instructions and " << mem_required << " KB memory.\n" << Colors::RESET;
 }
 
 // Handle 'screen -r <name>' command
@@ -1479,8 +1828,11 @@ void cmd_scheduler_start() {
                         name = oss.str();
                     }
 
+                    // Generate random memory requirement
+                    size_t mem_required = MIN_MEM_PER_PROC + (rand() % (MAX_MEM_PER_PROC - MIN_MEM_PER_PROC + 1));
+
                     // Add process to scheduler
-                    scheduler->add_process(name, 0);
+                    scheduler->add_process(name, mem_required);
 
                     // Console output (safe)
                     {
@@ -1488,10 +1840,11 @@ void cmd_scheduler_start() {
                         printf("\033[s");  // Save cursor position
                         printf("\033[%d;%dH", layout.output_start_row, 1);
                         printf("\033[K");
-                        printf("%sGenerated: %s (%d instructions)%s",
+                        printf("%sGenerated: %s (%d instructions, %zu KB)%s",
                             Colors::GREEN.c_str(),
                             name.c_str(),
                             scheduler->get_process(name)->get_total_commands(),
+                            mem_required,
                             Colors::RESET.c_str());
                         printf("\033[u");
                         fflush(stdout);
@@ -1571,8 +1924,42 @@ void cmd_report_util() {
     generate_report();
 }
 
+// Handle 'process-smi' command
+void cmd_process_smi() {
+    if (!system_initialized) {
+        std::cout << Colors::RED << "Error: System not initialized. Run 'initialize' first.\n" << Colors::RESET;
+        return;
+    }
+
+    display_process_smi();
+}
+
+// Handle 'vmstat' command
+void cmd_vmstat() {
+    if (!system_initialized) {
+        std::cout << Colors::RED << "Error: System not initialized. Run 'initialize' first.\n" << Colors::RESET;
+        return;
+    }
+
+    display_vmstat();
+}
+
+// Handle 'scheduler-test' command
+void cmd_scheduler_test() {
+    if (!system_initialized) {
+        std::cout << Colors::RED << "Error: System not initialized. Run 'initialize' first.\n" << Colors::RESET;
+        return;
+    }
+
+    std::cout << Colors::BRIGHT_YELLOW << "Starting scheduler test mode...\n" << Colors::RESET;
+    std::cout << Colors::CYAN << "This will run automatic process generation for testing.\n";
+    std::cout << "Use 'scheduler-stop' to stop the test.\n" << Colors::RESET;
+
+    cmd_scheduler_start();
+}
+
 // ═══════════════════════════════════════════════════════════════════════
-// SECTION 8: COMMAND PROCESSOR
+// SECTION 9: COMMAND PROCESSOR
 // ═══════════════════════════════════════════════════════════════════════
 
 // Parse and execute command
@@ -1632,8 +2019,17 @@ void process_command(const std::string& input) {
     else if (cmd == "scheduler-stop") {
         cmd_scheduler_stop();
     }
+    else if (cmd == "scheduler-test") {
+        cmd_scheduler_test();
+    }
     else if (cmd == "report-util") {
         cmd_report_util();
+    }
+    else if (cmd == "process-smi") {
+        cmd_process_smi();
+    }
+    else if (cmd == "vmstat") {
+        cmd_vmstat();
     }
     else if (cmd == "clear") {
         display_main_ui();
@@ -1651,7 +2047,7 @@ void process_command(const std::string& input) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// SECTION 9: KEYBOARD INPUT HANDLER
+// SECTION 10: KEYBOARD INPUT HANDLER
 // ═══════════════════════════════════════════════════════════════════════
 
 // Keyboard input thread
@@ -1703,7 +2099,7 @@ void cpu_display_thread() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// SECTION 10: MAIN FUNCTION
+// SECTION 11: MAIN FUNCTION
 // ═══════════════════════════════════════════════════════════════════════
 
 int main() {
