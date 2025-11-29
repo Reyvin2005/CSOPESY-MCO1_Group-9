@@ -1,0 +1,72 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\Reyvin\\OneDrive - De La Salle University - Manila\\Desktop\\VsCode22\\source\\repos\\CSOPESY-MCO1_Group-9\\CSOPESY-MCO1-OS_Emulator-Process_Scheduler\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{2CBCABA7-236A-4411-9229-312C438E73D7}|CSOPESY-MCO1-OS_Emulator-Process_Scheduler.vcxproj|C:\\Users\\Reyvin\\OneDrive - De La Salle University - Manila\\Desktop\\VsCode22\\source\\repos\\CSOPESY-MCO1_Group-9\\CSOPESY-MCO1-OS_Emulator-Process_Scheduler\\Group_9_MO1_OS_Emulator.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{2CBCABA7-236A-4411-9229-312C438E73D7}|CSOPESY-MCO1-OS_Emulator-Process_Scheduler.vcxproj|solutionrelative:Group_9_MO1_OS_Emulator.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2CBCABA7-236A-4411-9229-312C438E73D7}|CSOPESY-MCO1-OS_Emulator-Process_Scheduler.vcxproj|C:\\Users\\Reyvin\\OneDrive - De La Salle University - Manila\\Desktop\\VsCode22\\source\\repos\\CSOPESY-MCO1_Group-9\\CSOPESY-MCO1-OS_Emulator-Process_Scheduler\\config.txt||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{2CBCABA7-236A-4411-9229-312C438E73D7}|CSOPESY-MCO1-OS_Emulator-Process_Scheduler.vcxproj|solutionrelative:config.txt||{8B382828-6202-11D1-8870-0000F87579D2}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 2,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{1c64b9c2-e352-428e-a56d-0ace190b99a6}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{3ae79031-e1bc-11d0-8f78-00a0c9110057}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "Group_9_MO1_OS_Emulator.cpp",
+              "DocumentMoniker": "C:\\Users\\Reyvin\\OneDrive - De La Salle University - Manila\\Desktop\\VsCode22\\source\\repos\\CSOPESY-MCO1_Group-9\\CSOPESY-MCO1-OS_Emulator-Process_Scheduler\\Group_9_MO1_OS_Emulator.cpp",
+              "RelativeDocumentMoniker": "Group_9_MO1_OS_Emulator.cpp",
+              "ToolTip": "C:\\Users\\Reyvin\\OneDrive - De La Salle University - Manila\\Desktop\\VsCode22\\source\\repos\\CSOPESY-MCO1_Group-9\\CSOPESY-MCO1-OS_Emulator-Process_Scheduler\\Group_9_MO1_OS_Emulator.cpp",
+              "RelativeToolTip": "Group_9_MO1_OS_Emulator.cpp",
+              "ViewState": "AgIAAOEDAAAAAAAAAAAAAPkDAAAiAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2025-11-05T10:20:48.919Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "config.txt",
+              "DocumentMoniker": "C:\\Users\\Reyvin\\OneDrive - De La Salle University - Manila\\Desktop\\VsCode22\\source\\repos\\CSOPESY-MCO1_Group-9\\CSOPESY-MCO1-OS_Emulator-Process_Scheduler\\config.txt",
+              "RelativeDocumentMoniker": "config.txt",
+              "ToolTip": "C:\\Users\\Reyvin\\OneDrive - De La Salle University - Manila\\Desktop\\VsCode22\\source\\repos\\CSOPESY-MCO1_Group-9\\CSOPESY-MCO1-OS_Emulator-Process_Scheduler\\config.txt",
+              "RelativeToolTip": "config.txt",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAcAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003109|",
+              "WhenOpened": "2025-11-05T14:56:30.397Z",
+              "EditorCaption": ""
+            }
+          ]
+        },
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": -1,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{40ea2e6b-2121-4bb8-a43e-c83c04b51041}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
