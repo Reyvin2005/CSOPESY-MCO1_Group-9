@@ -22,9 +22,9 @@
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{2cbcaba7-236a-4411-9229-312c438e73d7}</ProjectGuid>
-    <RootNamespace>CSOPESYMCO1OSEmulatorProcessScheduler</RootNamespace>
+    <RootNamespace>CSOPESYMCO2OSEmulatorProcessScheduler</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>CSOPESY-MCO1-Group-9</ProjectName>
+    <ProjectName>CSOPESY-MO2-Group-9</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -124,13 +124,21 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Group_9_MO1_OS_Emulator.cpp" />
+    <ClCompile Include="Group_9_MO2_OS_Emulator.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="os_emulator.exe" />
+    <None Include="mo2_emulator.exe" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="config.txt" />
+    <Text Include="config_tc4.txt" />
+    <Text Include="config_tc5.txt" />
+    <Text Include="config_tc6.txt" />
+    <Text Include="config_tc7.txt" />
+    <Text Include="config_tc8.txt" />
+    <Text Include="README.md" />
+    <Text Include="MO2_CHANGES_SUMMARY.txt" />
+    <Text Include="QUICK_REFERENCE.txt" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

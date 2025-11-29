@@ -13,20 +13,50 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Config Files">
+      <UniqueIdentifier>{8A1D6F33-9B7C-4E2A-B8F5-1234567890AB}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Documentation">
+      <UniqueIdentifier>{9C2E7F44-AC8D-5F3B-C9G6-2345678901BC}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Group_9_MO1_OS_Emulator.cpp">
+    <ClCompile Include="Group_9_MO2_OS_Emulator.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="os_emulator.exe">
+    <None Include="mo2_emulator.exe">
       <Filter>Source Files</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
     <Text Include="config.txt">
-      <Filter>Source Files</Filter>
+      <Filter>Config Files</Filter>
+    </Text>
+    <Text Include="config_tc4.txt">
+      <Filter>Config Files</Filter>
+    </Text>
+    <Text Include="config_tc5.txt">
+      <Filter>Config Files</Filter>
+    </Text>
+    <Text Include="config_tc6.txt">
+      <Filter>Config Files</Filter>
+    </Text>
+    <Text Include="config_tc7.txt">
+      <Filter>Config Files</Filter>
+    </Text>
+    <Text Include="config_tc8.txt">
+      <Filter>Config Files</Filter>
+    </Text>
+    <Text Include="README.md">
+      <Filter>Documentation</Filter>
+    </Text>
+    <Text Include="MO2_CHANGES_SUMMARY.txt">
+      <Filter>Documentation</Filter>
+    </Text>
+    <Text Include="QUICK_REFERENCE.txt">
+      <Filter>Documentation</Filter>
     </Text>
   </ItemGroup>
 </Project>
