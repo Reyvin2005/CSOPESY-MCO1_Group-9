@@ -104,8 +104,8 @@
     - quantum-cycles: Time quantum for round-robin (default: 5)
     - min-ins: Minimum instructions per process (default: 100)
     - max-ins: Maximum instructions per process (default: 1000)
-    - delays-per-exec: Delay in ms per instruction (default: 100)
-    - batch-process-freq: Frequency (in seconds) between automatic process creation (default: 3)
+    - delays-per-exec: Delay in CPU TICKS per instruction (default: 100)
+    - batch-process-freq: Frequency (in CPU TICKS) between automatic process creation (default: 3)
 
     If config.txt is not found, default values will be used.
 
@@ -163,8 +163,8 @@ std::string SCHEDULER_TYPE = "fcfs";      // "fcfs" or "rr"
 int QUANTUM_CYCLES = 5;                   // Time quantum for round-robin
 int MIN_INS = 100;                        // Minimum instructions per process
 int MAX_INS = 1000;                       // Maximum instructions per process
-int BATCH_PROCESS_FREQ = 3;               // Generate process every N seconds
-int DELAYS_PER_EXEC = 100;                // Delay in ms per instruction execution
+int BATCH_PROCESS_FREQ = 3;               // Generate process every N CPU ticks
+int DELAYS_PER_EXEC = 100;                // Delay in CPU ticks per instruction execution
 
 // Function to load configuration from config.txt
 void load_config() {
@@ -202,7 +202,7 @@ void load_config() {
             }
             else if (key == "delays-per-exec" || key == "delay-per-exec") {
                 DELAYS_PER_EXEC = std::stoi(value);
-                if (DELAYS_PER_EXEC < 0) DELAYS_PER_EXEC = 0;  // Minimum 0ms delay
+                if (DELAYS_PER_EXEC < 0) DELAYS_PER_EXEC = 0;  // Minimum 0 ticks delay
             }
             else if (key == "batch-process-freq") {
                 BATCH_PROCESS_FREQ = std::stoi(value);
@@ -323,6 +323,10 @@ public:
         std::lock_guard<std::mutex> lock(process_mutex);
         return core_id;
     }
+    int get_cycles_executed() const {
+        std::lock_guard<std::mutex> lock(process_mutex);
+        return cycles_executed;
+    }
     State get_state() const {
         std::lock_guard<std::mutex> lock(process_mutex);
         return state;
@@ -338,6 +342,34 @@ public:
         std::lock_guard<std::mutex> lock(process_mutex);
         state = s;
     }
+    void set_last_execution_tick(uint64_t tick) {
+        std::lock_guard<std::mutex> lock(process_mutex);
+        last_execution_tick = tick;
+    }
+
+    // Reset cycles executed
+    void reset_cycles_executed() {
+        std::lock_guard<std::mutex> lock(process_mutex);
+        cycles_executed = 0;
+    }
+
+    // Determine if instruction should be executed based on delay config
+    bool should_execute_instruction(uint64_t current_tick) {
+        std::lock_guard<std::mutex> lock(process_mutex);
+
+        if (DELAYS_PER_EXEC == 0) {
+            // No delay - execute every tick
+            return true;
+        }
+
+        // Check if enough ticks have passed since last execution
+        if (current_tick >= last_execution_tick + DELAYS_PER_EXEC) {
+            last_execution_tick = current_tick;
+            return true;
+        }
+
+        return false;
+    }
 
     // Execute one instruction
     void execute_instruction() {
@@ -347,6 +379,7 @@ public:
         // Handle sleeping ticks (non-progressing, yields CPU)
         if (sleep_ticks_remaining > 0) {
             sleep_ticks_remaining--;
+            cycles_executed++;
             return; // do not advance current_line
         }
 
@@ -383,11 +416,13 @@ public:
             }
             push_log(out.str());
             current_line++;
+            cycles_executed++;
             break;
         }
         case OpCode::DECLARE: {
             variables[ins.var_name] = ins.declare_value;
             current_line++;
+            cycles_executed++;
             break;
         }
         case OpCode::ADD: {
@@ -395,6 +430,7 @@ public:
             uint32_t b = get_value(ins.op2);
             variables[ins.dest_var] = clamp16(a + b);
             current_line++;
+            cycles_executed++;
             break;
         }
         case OpCode::SUBTRACT: {
@@ -404,11 +440,13 @@ public:
             if (res < 0) res = 0;
             variables[ins.dest_var] = (uint16_t)res;
             current_line++;
+            cycles_executed++;
             break;
         }
         case OpCode::SLEEP: {
             sleep_ticks_remaining = ins.sleep_ticks; // begin sleeping next cycles
             current_line++;
+            cycles_executed++;
             break;
         }
         case OpCode::FOR_BEGIN: {
@@ -438,6 +476,7 @@ public:
             LoopFrame frame{ current_line + 1, match_idx, ins.for_repeats };
             loop_stack.push_back(frame);
             current_line = frame.start_index;
+            cycles_executed++;
             break;
         }
         case OpCode::FOR_END: {
@@ -459,6 +498,7 @@ public:
                 loop_stack.pop_back();
                 current_line++;
             }
+            cycles_executed++;
             break;
         }
         }
@@ -493,6 +533,8 @@ private:
     State state;
     std::string timestamp;
     mutable std::mutex process_mutex;
+    uint64_t last_execution_tick{ 0 };
+    int cycles_executed{ 0 };
 
     // Instruction program and runtime state
     std::vector<Instruction> program;
@@ -519,13 +561,13 @@ public:
         Instruction d{}; d.opcode = OpCode::DECLARE; d.var_name = "x"; d.declare_value = 0; program.push_back(d);
 
         // ADD(x, 5, 10)
-        Instruction a{}; a.opcode = OpCode::ADD; a.dest_var = "x"; 
+        Instruction a{}; a.opcode = OpCode::ADD; a.dest_var = "x";
         a.op1.is_variable = false; a.op1.imm_value = 5;
         a.op2.is_variable = false; a.op2.imm_value = 10;
         program.push_back(a);
 
         // PRINT("Value from: " + x)
-        Instruction p2{}; p2.opcode = OpCode::PRINT; p2.message_prefix = "Value from: "; p2.has_var_in_msg = true; 
+        Instruction p2{}; p2.opcode = OpCode::PRINT; p2.message_prefix = "Value from: "; p2.has_var_in_msg = true;
         p2.msg_var.is_variable = true; p2.msg_var.var_name = "x";
         program.push_back(p2);
 
@@ -534,7 +576,7 @@ public:
 
         // FOR ( body: ADD(x, x, 1) ; repeats=3 )
         Instruction fb{}; fb.opcode = OpCode::FOR_BEGIN; fb.for_repeats = 3; program.push_back(fb);
-        Instruction ab{}; ab.opcode = OpCode::ADD; ab.dest_var = "x"; 
+        Instruction ab{}; ab.opcode = OpCode::ADD; ab.dest_var = "x";
         ab.op1.is_variable = true; ab.op1.var_name = "x";
         ab.op2.is_variable = false; ab.op2.imm_value = 1;
         program.push_back(ab);
@@ -570,7 +612,7 @@ public:
         // Pattern: PRINT("Value from: " + x), ADD(x, x, [1-10]), repeat
         for (int i = 2; i < num_ins; ++i) {
             Instruction ins{};
-            
+
             if (i % 2 == 0) {
                 // Even index: PRINT("Value from: " + x)
                 ins.opcode = OpCode::PRINT;
@@ -578,7 +620,8 @@ public:
                 ins.has_var_in_msg = true;
                 ins.msg_var.is_variable = true;
                 ins.msg_var.var_name = "x";
-            } else {
+            }
+            else {
                 // Odd index: ADD(x, x, [1-10])
                 ins.opcode = OpCode::ADD;
                 ins.dest_var = "x";
@@ -638,7 +681,7 @@ public:
     Scheduler Class:
     - Manages process queue and CPU cores
     - Implements FCFS or Round-Robin scheduling
-    - Runs in separate thread
+    - Runs tick-based simulation (NOT real-time)
 */
 class Scheduler {
 public:
@@ -701,7 +744,6 @@ public:
         if (scheduler_thread.joinable()) {
             scheduler_thread.join();
         }
-        // Worker threads are detached, so no need to join them
     }
 
     // Check if scheduler is running
@@ -737,73 +779,67 @@ public:
 private:
     // Main scheduler loop (runs in separate thread)
     void scheduler_loop() {
+        auto last_tick_time = std::chrono::steady_clock::now();
+        const auto tick_interval = std::chrono::milliseconds(10); // 10ms per tick
+
         while (running) {
-            std::unique_lock<std::mutex> lock(scheduler_mutex);
+            auto current_time = std::chrono::steady_clock::now();
+            auto elapsed = current_time - last_tick_time;
 
-            // Wait for processes in queue
-            queue_cv.wait_for(lock, std::chrono::milliseconds(100), [this] {
-                return !ready_queue.empty() || !running;
-                });
+            // Only proceed if it's time for the next tick
+            if (elapsed >= tick_interval) {
+                last_tick_time = current_time;
 
-            if (!running) break;
+                std::unique_lock<std::mutex> lock(scheduler_mutex);
 
-            // Check for free CPU cores and assign processes
-            for (int core = 0; core < num_cores; ++core) {
-                // If core is free and queue has processes
-                if (cpu_cores[core] == nullptr && !ready_queue.empty()) {
-                    auto process = ready_queue.front();
-                    ready_queue.pop();
+                // Execute one cycle for all running processes
+                for (int core = 0; core < num_cores; ++core) {
+                    if (cpu_cores[core] != nullptr) {
+                        auto& process = cpu_cores[core];
 
-                    cpu_cores[core] = process;
-                    process->set_core_id(core);
-                    process->set_state(Process::RUNNING);
+                        // Execute instructions based on delays-per-exec
+                        if (process->should_execute_instruction(cpu_ticks)) {
+                            process->execute_instruction();
 
-                    // Launch execution thread for this process
-                    std::thread t(&Scheduler::execute_process, this, process, core);
-                    t.detach();  // Detach thread to avoid join issues on exit
+                            // Check if process finished or quantum expired
+                            if (process->is_finished()) {
+                                process->set_state(Process::FINISHED);
+                                process->set_core_id(-1);
+                                cpu_cores[core] = nullptr;
+                            }
+                            else if (scheduler_type == "rr" &&
+                                process->get_cycles_executed() >= quantum_cycles) {
+                                // Round Robin: time slice expired, requeue
+                                process->set_state(Process::READY);
+                                process->set_core_id(-1);
+                                process->reset_cycles_executed();
+                                ready_queue.push(process);
+                                cpu_cores[core] = nullptr;
+                            }
+                        }
+                    }
                 }
-            }
 
-            lock.unlock();
-            cpu_ticks++; // simulate CPU tick increment
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-    }
+                // Assign processes to free cores
+                for (int core = 0; core < num_cores; ++core) {
+                    if (cpu_cores[core] == nullptr && !ready_queue.empty()) {
+                        auto process = ready_queue.front();
+                        ready_queue.pop();
 
-    // Execute a process (runs in separate thread per process)
-    void execute_process(std::shared_ptr<Process> process, int core) {
-        if (scheduler_type == "fcfs") {
-            // FCFS: Run process to completion
-            while (!process->is_finished() && running) {
-                process->execute_instruction();
-                std::this_thread::sleep_for(std::chrono::milliseconds(DELAYS_PER_EXEC));
-            }
-        }
-        else if (scheduler_type == "rr") {
-            // Round-Robin: Execute for quantum cycles, then requeue if not finished
-            int cycles_executed = 0;
-            while (!process->is_finished() && running && cycles_executed < quantum_cycles) {
-                process->execute_instruction();
-                cycles_executed++;
-                std::this_thread::sleep_for(std::chrono::milliseconds(DELAYS_PER_EXEC));
-            }
-        }
+                        cpu_cores[core] = process;
+                        process->set_core_id(core);
+                        process->set_state(Process::RUNNING);
+                        process->set_last_execution_tick(cpu_ticks);
+                    }
+                }
 
-        // If process is not finished, put it back in the queue (for RR)
-        if (!process->is_finished() && running && scheduler_type == "rr") {
-            std::lock_guard<std::mutex> lock(scheduler_mutex);
-            process->set_state(Process::READY);
-            process->set_core_id(-1);
-            ready_queue.push(process);
-            cpu_cores[core] = nullptr;
-            queue_cv.notify_one();
-        }
-        else {
-            // Mark finished and free the core
-            process->set_state(Process::FINISHED);
-            process->set_core_id(-1);
-            std::lock_guard<std::mutex> lock(scheduler_mutex);
-            cpu_cores[core] = nullptr;
+                lock.unlock();
+                cpu_ticks++; // Increment CPU tick counter
+            }
+            else {
+                // Sleep briefly to avoid busy waiting
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
         }
     }
 
@@ -1075,7 +1111,7 @@ void display_help() {
         << "\n    - Lists all processes and their states\n";
 
     std::cout << Colors::BRIGHT_YELLOW << "\n  scheduler-start" << Colors::WHITE
-        << "\n    - Begins automatic process generation every batch-process-freq seconds\n";
+        << "\n    - Begins automatic process generation every batch-process-freq CPU TICKS\n";
 
     std::cout << Colors::BRIGHT_YELLOW << "\n  scheduler-stop" << Colors::WHITE
         << "\n    - Stops automatic process generation only (scheduler continues running)\n";
@@ -1445,17 +1481,17 @@ void cmd_scheduler_start() {
 
     std::cout << Colors::BRIGHT_YELLOW
         << "Starting continuous process generation every "
-        << BATCH_PROCESS_FREQ << " seconds...\n"
+        << BATCH_PROCESS_FREQ << " CPU ticks...\n"
         << Colors::RESET;
 
     batch_thread = std::thread([]() {
-        uint64_t next_target = scheduler->get_cpu_ticks() + BATCH_PROCESS_FREQ;
+        uint64_t next_generation_tick = scheduler->get_cpu_ticks() + BATCH_PROCESS_FREQ;
 
-        while (scheduler_autorun) {
+        while (scheduler_autorun && is_running) {
             uint64_t current_ticks = scheduler->get_cpu_ticks();
 
-            // Check if it's time to generate a new process
-            if (current_ticks >= next_target) {
+            // Check if it's time to generate a new process based on CPU ticks
+            if (current_ticks >= next_generation_tick) {
                 {
                     std::lock_guard<std::mutex> lock(batch_mutex);
 
@@ -1473,6 +1509,7 @@ void cmd_scheduler_start() {
 
                     // Add process to scheduler
                     scheduler->add_process(name, 0);
+                    auto new_process = scheduler->get_process(name);
 
                     // Console output (safe)
                     {
@@ -1480,22 +1517,23 @@ void cmd_scheduler_start() {
                         printf("\033[s");  // Save cursor position
                         printf("\033[%d;%dH", layout.output_start_row, 1);
                         printf("\033[K");
-                        printf("%sGenerated: %s (%d instructions)%s",
+                        printf("%sGenerated: %s (%d instructions) at tick %llu%s",
                             Colors::GREEN.c_str(),
                             name.c_str(),
-                            scheduler->get_process(name)->get_total_commands(),
+                            new_process ? new_process->get_total_commands() : 0,
+                            (unsigned long long)current_ticks,
                             Colors::RESET.c_str());
                         printf("\033[u");
                         fflush(stdout);
                     }
-                }
 
-                // Set next generation tick target
-                next_target = current_ticks + BATCH_PROCESS_FREQ;
+                    // Set next generation tick target
+                    next_generation_tick = current_ticks + BATCH_PROCESS_FREQ;
+                }
             }
 
-            // Light sleep to avoid busy waiting
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            // Light sleep to avoid busy waiting (1ms = 100 CPU ticks at 10ms/tick)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
 
         // Output stop message
@@ -1504,8 +1542,9 @@ void cmd_scheduler_start() {
             printf("\033[s");
             printf("\033[%d;%dH", layout.output_start_row, 1);
             printf("\033[K");
-            printf("%sProcess generation stopped.%s",
+            printf("%sProcess generation stopped at tick %llu.%s",
                 Colors::BRIGHT_YELLOW.c_str(),
+                (unsigned long long)scheduler->get_cpu_ticks(),
                 Colors::RESET.c_str());
             printf("\033[u");
             fflush(stdout);
