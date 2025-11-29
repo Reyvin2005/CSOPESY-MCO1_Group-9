@@ -176,4 +176,5 @@ Typical workflow:
 
 ## License
 
-For academic use within CSOPESY. If you need a specific open-source license, add it here.
+For academic use within CSOPESY
+
