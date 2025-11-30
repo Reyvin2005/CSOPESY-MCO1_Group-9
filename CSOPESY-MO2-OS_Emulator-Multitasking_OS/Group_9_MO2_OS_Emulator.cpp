@@ -1,11 +1,11 @@
 /*
     Course & Section: CSOPESY | S13
-    Assessment: MO2 - OS Emulator - Multitasking OS with Memory Management
+    Assessment: MO2 - OS Emulator - Multitasking OS
     Group 9 Developers: Alvarez, Ivan Antonio T.
                         Barlaan, Bahir Benjamin C.
                         Co, Joshua Benedict B.
                         Tan, Reyvin Matthew T.
-    Version Date: November 29, 2025
+    Version Date: November 30, 2025
 
     ═══════════════════════════════════════════════════════════════════════
     HOW TO USE THIS OS EMULATOR:
@@ -17,41 +17,37 @@
         cl /EHsc /std:c++14 Group_9_MO2_OS_Emulator.cpp
 
     Windows (MinGW):
-        g++ -std=c++14 -pthread Group_9_MO2_OS_Emulator.cpp -o mo2_emulator.exe
+        g++ -std=c++14 -pthread Group_9_MO2_OS_Emulator.cpp -o os_emulator.exe
 
     Linux/Mac:
-        g++ -std=c++14 -pthread Group_9_MO2_OS_Emulator.cpp -o mo2_emulator
+        g++ -std=c++14 -pthread Group_9_MO2_OS_Emulator.cpp -o os_emulator
 
     AVAILABLE COMMANDS:
     -------------------
     1. initialize
        - Starts the OS emulator and scheduler
-       - Initializes memory management system
        - Must be run before any other commands
        - Example: initialize
 
-    2. screen -s <process_name>
-       - Creates a new process with the given name
-       - Process will be added to the scheduler queue
-       - Memory is allocated based on configuration
-       - Example: screen -s process1
+    2. screen -s <process_name> <memory_size>
+       - Creates a new process with given name and memory allocation
+       - Memory size must be power of 2 between 64-65536 bytes
+       - Example: screen -s process1 256
 
-    3. screen -r <process_name>
+    3. screen -c <process_name> <memory_size> "<instructions>"
+       - Creates process with custom instructions
+       - Example: screen -c process2 128 "DECLARE x 10; ADD x x 5; PRINT x"
+
+    4. screen -r <process_name>
        - Opens the screen of a specific process
        - Shows process execution details
        - Type 'exit' to return to main console
        - Example: screen -r process1
 
-    4. screen -ls
+    5. screen -ls
        - Lists all processes and their current states
-       - Shows: name, timestamp, core, command counters
+       - Shows: name, timestamp, core, command counters, memory usage
        - Example: screen -ls
-
-    5. scheduler-test
-       - Automated scheduler testing
-       - Starts the scheduler automatically
-       - Useful for test case validation
-       - Example: scheduler-test
 
     6. scheduler-start
        - Generates test processes automatically
@@ -63,24 +59,20 @@
        - Existing processes remain in queue
        - Example: scheduler-stop
 
-    8. report-util
-       - Generates a utilization report
-       - Shows CPU usage, running/finished processes
-       - Saves to a text file
-       - Example: report-util
+    8. process-smi
+       - Shows memory usage and process list with memory allocation
+       - Similar to nvidia-smi command
+       - Example: process-smi
 
     9. vmstat
-       - Displays virtual memory statistics
-       - Shows total/used/free memory
-       - Shows frame allocation and paging activity
+       - Detailed memory and paging statistics
        - Example: vmstat
 
-    10. process-smi
-        - Shows process and memory information
-        - Displays CPU utilization percentage
-        - Lists memory usage per process
-        - Shows paging statistics (pages in/out)
-        - Example: process-smi
+    10. report-util
+        - Generates a utilization report
+        - Shows CPU usage, running/finished processes, memory stats
+        - Saves to a text file
+        - Example: report-util
 
     11. clear
         - Clears the screen and redraws the UI
@@ -91,15 +83,27 @@
         - All data will be lost
         - Example: exit
 
+    NEW INSTRUCTIONS:
+    -----------------
+    1. READ <var> <memory_address>
+       - Reads uint16 from memory address to variable
+       - Example: READ my_var 0x1000
+
+    2. WRITE <memory_address> <value>
+       - Writes uint16 value to memory address
+       - Example: WRITE 0x2000 42
+
     TYPICAL WORKFLOW:
     -----------------
     1. Start the program
     2. Type 'initialize' to start the OS
-    3. Create processes: screen -s myProcess1
+    3. Create processes: screen -s myProcess1 256
     4. View processes: screen -ls
-    5. Check specific process: screen -r myProcess1
-    6. Generate report: report-util
-    7. Exit: exit
+    5. Check memory: process-smi
+    6. View details: vmstat
+    7. Check specific process: screen -r myProcess1
+    8. Generate report: report-util
+    9. Exit: exit
 
     SCHEDULING ALGORITHMS:
     ----------------------
@@ -107,48 +111,41 @@
     - FCFS (First-Come-First-Served): Default, processes run to completion
     - Round-Robin: Time-sliced execution (configurable quantum)
 
+    MEMORY MANAGEMENT:
+    ------------------
+    - Demand paging with page fault handling
+    - Backing store in "csopesy-backing-store.txt"
+    - Memory visualization via process-smi and vmstat
+    - Page replacement algorithm (FIFO)
+
     CONFIGURATION:
     --------------
     Create a config.txt file in the same directory with the following format:
 
     num-cpu 4
-    scheduler fcfs
+    scheduler rr
     quantum-cycles 5
-    max-overall-mem 32768
-    mem-per-frame 32
-    min-mem-per-proc 8
-    max-mem-per-proc 8
     min-ins 100
     max-ins 1000
     delays-per-exec 100
     batch-process-freq 3
+    max-overall-mem 65536
+    mem-per-frame 64
+    min-mem-per-proc 64
 
     Parameters:
     - num-cpu: Number of CPU cores (default: 4)
     - scheduler: "fcfs" (First-Come-First-Served) or "rr" (Round-Robin)
     - quantum-cycles: Time quantum for round-robin (default: 5)
-    - max-overall-mem: Total system memory in KB (default: 32768)
-    - mem-per-frame: Memory per frame/page in KB (default: 32)
-    - min-mem-per-proc: Minimum memory per process in KB (default: 8)
-    - max-mem-per-proc: Maximum memory per process in KB (default: 8)
     - min-ins: Minimum instructions per process (default: 100)
     - max-ins: Maximum instructions per process (default: 1000)
-    - delays-per-exec: Delay in ms per instruction (default: 100)
-    - batch-process-freq: Frequency (in seconds) between automatic process creation (default: 3)
+    - delays-per-exec: Delay in CPU TICKS per instruction (default: 100)
+    - batch-process-freq: Frequency (in CPU TICKS) between automatic process creation (default: 3)
+    - max-overall-mem: Maximum physical memory in bytes (default: 65536)
+    - mem-per-frame: Page/frame size in bytes (default: 64)
+    - min-mem-per-proc: Minimum memory per process in bytes (default: 64)
 
     If config.txt is not found, default values will be used.
-
-    MEMORY MANAGEMENT (MO2):
-    ------------------------
-    The MO2 emulator includes:
-    - Paging system with configurable frame sizes
-    - LRU (Least Recently Used) page replacement algorithm
-    - Backing store simulation for paged-out memory
-    - Per-process page tables
-    - Memory allocation/deallocation on process lifecycle
-    - Page-in/page-out tracking for diagnostics
-    - Virtual memory statistics via vmstat command
-    - Process memory information via process-smi command
 
     ═══════════════════════════════════════════════════════════════════════
 */
@@ -170,6 +167,9 @@
 #include <fstream>
 #include <random>
 #include <deque>
+#include <bitset>
+#include <unordered_map>
+#include <cmath>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -204,14 +204,22 @@ std::string SCHEDULER_TYPE = "fcfs";      // "fcfs" or "rr"
 int QUANTUM_CYCLES = 5;                   // Time quantum for round-robin
 int MIN_INS = 100;                        // Minimum instructions per process
 int MAX_INS = 1000;                       // Maximum instructions per process
-int BATCH_PROCESS_FREQ = 3;               // Generate process every N seconds
-int DELAYS_PER_EXEC = 100;                // Delay in ms per instruction execution
+int BATCH_PROCESS_FREQ = 3;               // Generate process every N CPU ticks
+int DELAYS_PER_EXEC = 100;                // Delay in CPU ticks per instruction execution
 
-// MO2: Memory Management Configuration
-size_t MAX_OVERALL_MEM = 32768;           // Total system memory in KB
-size_t MEM_PER_FRAME = 32;                // Memory per frame/page in KB
-size_t MIN_MEM_PER_PROC = 8;              // Minimum memory per process in KB
-size_t MAX_MEM_PER_PROC = 8;              // Maximum memory per process in KB
+// MO2 Memory configuration
+int MAX_OVERALL_MEM = 65536;              // Maximum physical memory in bytes
+int MEM_PER_FRAME = 64;                   // Page/frame size in bytes
+int MIN_MEM_PER_PROC = 64;                // Minimum memory per process
+
+// Memory constants
+const int SYMBOL_TABLE_SIZE = 64;         // Fixed symbol table size
+const int MAX_VARIABLES = 32;             // Maximum variables per process
+const uint16_t MAX_UINT16 = 65535;
+
+// Memory address ranges
+const uint32_t MIN_MEMORY_ALLOC = 64;     // 2^6
+const uint32_t MAX_MEMORY_ALLOC = 65536;  // 2^16
 
 // Function to load configuration from config.txt
 void load_config() {
@@ -249,27 +257,24 @@ void load_config() {
             }
             else if (key == "delays-per-exec" || key == "delay-per-exec") {
                 DELAYS_PER_EXEC = std::stoi(value);
-                if (DELAYS_PER_EXEC < 0) DELAYS_PER_EXEC = 0;  // Minimum 0ms delay
+                if (DELAYS_PER_EXEC < 0) DELAYS_PER_EXEC = 0;  // Minimum 0 ticks delay
             }
             else if (key == "batch-process-freq") {
                 BATCH_PROCESS_FREQ = std::stoi(value);
                 if (BATCH_PROCESS_FREQ < 1) BATCH_PROCESS_FREQ = 1;
             }
+            // MO2 Memory configuration
             else if (key == "max-overall-mem") {
-                MAX_OVERALL_MEM = std::stoull(value);
-                if (MAX_OVERALL_MEM < 1) MAX_OVERALL_MEM = 1024;
+                MAX_OVERALL_MEM = std::stoi(value);
+                if (MAX_OVERALL_MEM < 64) MAX_OVERALL_MEM = 64;
             }
             else if (key == "mem-per-frame") {
-                MEM_PER_FRAME = std::stoull(value);
+                MEM_PER_FRAME = std::stoi(value);
                 if (MEM_PER_FRAME < 1) MEM_PER_FRAME = 1;
             }
             else if (key == "min-mem-per-proc") {
-                MIN_MEM_PER_PROC = std::stoull(value);
-                if (MIN_MEM_PER_PROC < 1) MIN_MEM_PER_PROC = 1;
-            }
-            else if (key == "max-mem-per-proc") {
-                MAX_MEM_PER_PROC = std::stoull(value);
-                if (MAX_MEM_PER_PROC < MIN_MEM_PER_PROC) MAX_MEM_PER_PROC = MIN_MEM_PER_PROC;
+                MIN_MEM_PER_PROC = std::stoi(value);
+                if (MIN_MEM_PER_PROC < 64) MIN_MEM_PER_PROC = 64;
             }
         }
         catch (const std::exception& e) {
@@ -282,257 +287,332 @@ void load_config() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// SECTION 2: MEMORY MANAGEMENT SYSTEM (MO2)
+// SECTION 2: MEMORY MANAGEMENT STRUCTURES
 // ═══════════════════════════════════════════════════════════════════════
 
-/*
-    Memory Manager Class:
-    - Implements paging system with frames
-    - Manages memory allocation for processes
-    - Handles page-in/page-out with backing store
-    - Tracks memory usage statistics
-*/
+// Page table entry
+struct PageTableEntry {
+    bool valid = false;
+    int frame_number = -1;
+    bool dirty = false;
+    bool referenced = false;
+};
+
+// Memory frame
+struct MemoryFrame {
+    bool allocated = false;
+    int process_id = -1;
+    int page_number = -1;
+    std::vector<uint8_t> data;
+    uint64_t last_used = 0; // For page replacement
+
+    MemoryFrame() : data(MEM_PER_FRAME, 0) {}
+};
+
+// Backing store entry
+struct BackingStoreEntry {
+    int process_id;
+    int page_number;
+    std::vector<uint8_t> data;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// SECTION 3: MEMORY MANAGER CLASS
+// ═══════════════════════════════════════════════════════════════════════
+
 class MemoryManager {
-public:
-    struct PageFrame {
-        int process_id;           // -1 if free
-        size_t page_number;       // Page number within process
-        bool is_allocated;        // Frame in use
-        std::chrono::steady_clock::time_point last_access;
-        
-        PageFrame() : process_id(-1), page_number(0), is_allocated(false) {}
-    };
-
-    struct ProcessMemoryInfo {
-        size_t memory_required;   // Total memory needed (KB)
-        size_t num_pages;         // Number of pages needed
-        std::vector<int> page_table;  // Maps page# to frame# (-1 if paged out)
-        size_t pages_in_memory;   // Currently in RAM
-        size_t pages_in_backing;  // Currently in backing store
-        
-        ProcessMemoryInfo() : memory_required(0), num_pages(0), pages_in_memory(0), pages_in_backing(0) {}
-    };
-
 private:
-    size_t total_memory;          // Total system memory (KB)
-    size_t frame_size;            // Size per frame (KB)
-    size_t num_frames;            // Total frames available
-    size_t num_free_frames;       // Currently free frames
-    
-    std::vector<PageFrame> frames;  // Physical memory frames
-    std::map<int, ProcessMemoryInfo> process_memory;  // Per-process memory info
-    
-    mutable std::mutex mem_mutex;
-    std::atomic<uint64_t> total_pages_in{0};
-    std::atomic<uint64_t> total_pages_out{0};
-    
-    // Backing store simulation (just tracking, not actual file I/O for speed)
-    std::map<std::pair<int, size_t>, bool> backing_store;  // (process_id, page#) -> exists
+    std::vector<MemoryFrame> physical_memory;
+    std::map<int, std::vector<PageTableEntry>> page_tables; // process_id -> page table
+    std::map<std::pair<int, int>, BackingStoreEntry> backing_store; // (process_id, page_number) -> data
+    std::deque<int> page_replacement_queue; // FIFO for page replacement
+    std::mutex memory_mutex;
+    uint64_t current_tick = 0;
+    std::atomic<int> pages_paged_in{ 0 };
+    std::atomic<int> pages_paged_out{ 0 };
 
 public:
-    MemoryManager(size_t total_mem_kb, size_t frame_sz_kb)
-        : total_memory(total_mem_kb), frame_size(frame_sz_kb) {
-        
-        num_frames = total_memory / frame_size;
-        num_free_frames = num_frames;
-        frames.resize(num_frames);
+    MemoryManager(int total_memory, int frame_size) {
+        int num_frames = total_memory / frame_size;
+        physical_memory.resize(num_frames);
     }
 
-    // Try to allocate memory for a process
-    bool allocate_process(int process_id, size_t memory_kb) {
-        std::lock_guard<std::mutex> lock(mem_mutex);
-        
-        if (process_memory.find(process_id) != process_memory.end()) {
-            return false;  // Already allocated
-        }
-        
-        ProcessMemoryInfo info;
-        info.memory_required = memory_kb;
-        info.num_pages = (memory_kb + frame_size - 1) / frame_size;  // Ceiling division
-        info.page_table.resize(info.num_pages, -1);  // All pages start paged out
-        info.pages_in_memory = 0;
-        info.pages_in_backing = info.num_pages;  // All pages initially in backing store
-        
-        // Initialize all pages in backing store
-        for (size_t i = 0; i < info.num_pages; ++i) {
-            backing_store[{process_id, i}] = true;
-        }
-        
-        process_memory[process_id] = info;
-        return true;
-    }
+    // Allocate memory for a process
+    bool allocate_memory(int process_id, int memory_size) {
+        std::lock_guard<std::mutex> lock(memory_mutex);
 
-    // Deallocate all memory for a process
-    void deallocate_process(int process_id) {
-        std::lock_guard<std::mutex> lock(mem_mutex);
-        
-        auto it = process_memory.find(process_id);
-        if (it == process_memory.end()) return;
-        
-        ProcessMemoryInfo& info = it->second;
-        
-        // Free all frames belonging to this process
-        for (size_t page = 0; page < info.num_pages; ++page) {
-            int frame_idx = info.page_table[page];
-            if (frame_idx >= 0) {
-                frames[frame_idx].is_allocated = false;
-                frames[frame_idx].process_id = -1;
-                num_free_frames++;
-            }
-        }
-        
-        // Remove from backing store
-        for (size_t i = 0; i < info.num_pages; ++i) {
-            backing_store.erase({process_id, i});
-        }
-        
-        process_memory.erase(it);
-    }
-
-    // Page-in: Bring a page from backing store to memory
-    // Returns true if successful, false if no free frames
-    bool page_in(int process_id, size_t page_number) {
-        std::lock_guard<std::mutex> lock(mem_mutex);
-        
-        auto it = process_memory.find(process_id);
-        if (it == process_memory.end() || page_number >= it->second.num_pages) {
+        // Validate memory size
+        if (memory_size < MIN_MEMORY_ALLOC || memory_size > MAX_MEMORY_ALLOC) {
             return false;
         }
-        
-        ProcessMemoryInfo& info = it->second;
-        
-        // Already in memory?
-        if (info.page_table[page_number] >= 0) {
-            // Update access time
-            int frame_idx = info.page_table[page_number];
-            frames[frame_idx].last_access = std::chrono::steady_clock::now();
-            return true;
+
+        // Check if it's power of 2
+        if ((memory_size & (memory_size - 1)) != 0) {
+            return false;
         }
-        
-        // Need a free frame
-        if (num_free_frames == 0) {
-            // Try to evict a page using LRU
-            if (!evict_page()) {
-                return false;  // Cannot evict
-            }
-        }
-        
-        // Find first free frame
-        int frame_idx = -1;
-        for (size_t i = 0; i < num_frames; ++i) {
-            if (!frames[i].is_allocated) {
-                frame_idx = (int)i;
-                break;
-            }
-        }
-        
-        if (frame_idx < 0) return false;
-        
-        // Allocate frame
-        frames[frame_idx].is_allocated = true;
-        frames[frame_idx].process_id = process_id;
-        frames[frame_idx].page_number = page_number;
-        frames[frame_idx].last_access = std::chrono::steady_clock::now();
-        
-        info.page_table[page_number] = frame_idx;
-        info.pages_in_memory++;
-        info.pages_in_backing--;
-        num_free_frames--;
-        total_pages_in++;
-        
+
+        int pages_needed = (memory_size + MEM_PER_FRAME - 1) / MEM_PER_FRAME;
+
+        // Initialize page table
+        std::vector<PageTableEntry> page_table(pages_needed);
+        page_tables[process_id] = page_table;
+
         return true;
     }
 
-    // Page-out: Evict a page using LRU policy
-    bool evict_page() {
-        // Find least recently used frame
-        int lru_frame = -1;
-        auto oldest_time = std::chrono::steady_clock::now();
-        
-        for (size_t i = 0; i < num_frames; ++i) {
-            if (frames[i].is_allocated && frames[i].last_access < oldest_time) {
-                oldest_time = frames[i].last_access;
-                lru_frame = (int)i;
+    // Deallocate memory for a process
+    void deallocate_memory(int process_id) {
+        std::lock_guard<std::mutex> lock(memory_mutex);
+
+        auto it = page_tables.find(process_id);
+        if (it == page_tables.end()) return;
+
+        // Free all frames used by this process
+        for (int i = 0; i < it->second.size(); i++) {
+            if (it->second[i].valid) {
+                int frame_num = it->second[i].frame_number;
+                physical_memory[frame_num].allocated = false;
+
+                // Remove from replacement queue
+                auto queue_it = std::find(page_replacement_queue.begin(),
+                    page_replacement_queue.end(), frame_num);
+                if (queue_it != page_replacement_queue.end()) {
+                    page_replacement_queue.erase(queue_it);
+                }
             }
+
+            // Remove from backing store
+            backing_store.erase({ process_id, i });
         }
-        
-        if (lru_frame < 0) return false;
-        
-        // Evict this frame
-        PageFrame& frame = frames[lru_frame];
-        int proc_id = frame.process_id;
-        size_t page_num = frame.page_number;
-        
-        auto it = process_memory.find(proc_id);
-        if (it != process_memory.end()) {
-            ProcessMemoryInfo& info = it->second;
-            info.page_table[page_num] = -1;  // Mark as paged out
-            info.pages_in_memory--;
-            info.pages_in_backing++;
-            backing_store[{proc_id, page_num}] = true;
+
+        page_tables.erase(process_id);
+    }
+
+    // Handle page fault
+    bool handle_page_fault(int process_id, int page_number) {
+        std::lock_guard<std::mutex> lock(memory_mutex);
+        current_tick++;
+
+        auto& page_table = page_tables[process_id];
+        if (page_number >= page_table.size()) return false;
+
+        // Find free frame or victim
+        int frame_number = find_free_frame();
+        if (frame_number == -1) {
+            frame_number = select_victim_frame();
+            if (frame_number == -1) return false;
         }
-        
-        frame.is_allocated = false;
-        frame.process_id = -1;
-        num_free_frames++;
-        total_pages_out++;
-        
+
+        // Page out victim if needed
+        if (physical_memory[frame_number].allocated) {
+            page_out_frame(frame_number);
+        }
+
+        // Page in requested page
+        page_in_frame(process_id, page_number, frame_number);
+
+        // Update page table
+        page_table[page_number].valid = true;
+        page_table[page_number].frame_number = frame_number;
+        page_table[page_number].referenced = true;
+
+        // Update frame info
+        physical_memory[frame_number].allocated = true;
+        physical_memory[frame_number].process_id = process_id;
+        physical_memory[frame_number].page_number = page_number;
+        physical_memory[frame_number].last_used = current_tick;
+
+        // Add to replacement queue
+        page_replacement_queue.push_back(frame_number);
+
+        pages_paged_in++;
+        return true;
+    }
+
+    // Read from memory
+    bool read_memory(int process_id, uint32_t address, uint16_t& value) {
+        std::lock_guard<std::mutex> lock(memory_mutex);
+        current_tick++;
+
+        int page_number = address / MEM_PER_FRAME;
+        int offset = address % MEM_PER_FRAME;
+
+        if (offset > MEM_PER_FRAME - 2) return false; // uint16 needs 2 bytes
+
+        auto it = page_tables.find(process_id);
+        if (it == page_tables.end()) return false;
+
+        auto& page_table = it->second;
+        if (page_number >= page_table.size()) return false;
+
+        if (!page_table[page_number].valid) {
+            return false; // Page fault - caller should handle
+        }
+
+        int frame_number = page_table[page_number].frame_number;
+        if (frame_number < 0 || frame_number >= physical_memory.size()) return false;
+
+        // Read the value
+        value = (physical_memory[frame_number].data[offset] << 8) |
+            physical_memory[frame_number].data[offset + 1];
+
+        page_table[page_number].referenced = true;
+        physical_memory[frame_number].last_used = current_tick;
+
+        return true;
+    }
+
+    // Write to memory
+    bool write_memory(int process_id, uint32_t address, uint16_t value) {
+        std::lock_guard<std::mutex> lock(memory_mutex);
+        current_tick++;
+
+        int page_number = address / MEM_PER_FRAME;
+        int offset = address % MEM_PER_FRAME;
+
+        if (offset > MEM_PER_FRAME - 2) return false;
+
+        auto it = page_tables.find(process_id);
+        if (it == page_tables.end()) return false;
+
+        auto& page_table = it->second;
+        if (page_number >= page_table.size()) return false;
+
+        if (!page_table[page_number].valid) {
+            return false; // Page fault - caller should handle
+        }
+
+        int frame_number = page_table[page_number].frame_number;
+        if (frame_number < 0 || frame_number >= physical_memory.size()) return false;
+
+        // Write the value
+        physical_memory[frame_number].data[offset] = (value >> 8) & 0xFF;
+        physical_memory[frame_number].data[offset + 1] = value & 0xFF;
+
+        page_table[page_number].dirty = true;
+        page_table[page_number].referenced = true;
+        physical_memory[frame_number].last_used = current_tick;
+
         return true;
     }
 
     // Get memory statistics
-    void get_stats(size_t& total, size_t& used, size_t& free) const {
-        std::lock_guard<std::mutex> lock(mem_mutex);
-        total = total_memory;
-        used = (num_frames - num_free_frames) * frame_size;
-        free = num_free_frames * frame_size;
-    }
+    void get_memory_stats(int& total_memory, int& used_memory, int& free_memory,
+        int& total_pages, int& used_pages, int& free_pages) {
+        std::lock_guard<std::mutex> lock(memory_mutex);
 
-    // Get process-specific memory info
-    bool get_process_info(int process_id, size_t& mem_usage, size_t& num_pages_in, size_t& num_pages_out) const {
-        std::lock_guard<std::mutex> lock(mem_mutex);
-        auto it = process_memory.find(process_id);
-        if (it == process_memory.end()) return false;
-        
-        const ProcessMemoryInfo& info = it->second;
-        mem_usage = info.memory_required;
-        num_pages_in = info.pages_in_memory;
-        num_pages_out = info.pages_in_backing;
-        return true;
+        total_memory = MAX_OVERALL_MEM;
+        used_memory = 0;
+        free_memory = 0;
+
+        total_pages = physical_memory.size();
+        used_pages = 0;
+        free_pages = 0;
+
+        for (const auto& frame : physical_memory) {
+            if (frame.allocated) {
+                used_memory += MEM_PER_FRAME;
+                used_pages++;
+            }
+            else {
+                free_memory += MEM_PER_FRAME;
+                free_pages++;
+            }
+        }
     }
 
     // Get paging statistics
-    void get_paging_stats(uint64_t& pages_in, uint64_t& pages_out) const {
-        pages_in = total_pages_in.load();
-        pages_out = total_pages_out.load();
+    void get_paging_stats(int& paged_in, int& paged_out) {
+        paged_in = pages_paged_in.load();
+        paged_out = pages_paged_out.load();
     }
 
-    // Check if process can fit in memory (at least minimum pages)
-    bool can_allocate(size_t memory_kb) const {
-        std::lock_guard<std::mutex> lock(mem_mutex);
-        size_t pages_needed = (memory_kb + frame_size - 1) / frame_size;
-        // For simplicity, just check if we have registered the process
-        // Real check: do we have enough total memory?
-        return memory_kb <= total_memory;
+    // Save backing store to file
+    void save_backing_store() {
+        std::lock_guard<std::mutex> lock(memory_mutex);
+        std::ofstream file("csopesy-backing-store.txt");
+        if (!file.is_open()) return;
+
+        file << "CSOPESY Backing Store\n";
+        file << "=====================\n";
+        file << "Last updated: " << time(nullptr) << "\n";
+        file << "Total entries: " << backing_store.size() << "\n\n";
+
+        for (const auto& entry : backing_store) {
+            file << "Process: " << entry.first.first
+                << " Page: " << entry.first.second
+                << " Size: " << entry.second.data.size() << " bytes\n";
+        }
+
+        file.close();
     }
 
-    size_t get_num_frames() const { return num_frames; }
-    size_t get_free_frames() const { 
-        std::lock_guard<std::mutex> lock(mem_mutex);
-        return num_free_frames; 
+private:
+    int find_free_frame() {
+        for (int i = 0; i < physical_memory.size(); i++) {
+            if (!physical_memory[i].allocated) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    int select_victim_frame() {
+        if (page_replacement_queue.empty()) return -1;
+
+        int victim = page_replacement_queue.front();
+        page_replacement_queue.pop_front();
+        return victim;
+    }
+
+    void page_out_frame(int frame_number) {
+        if (!physical_memory[frame_number].allocated) return;
+
+        int process_id = physical_memory[frame_number].process_id;
+        int page_number = physical_memory[frame_number].page_number;
+
+        // Find page table entry
+        auto it = page_tables.find(process_id);
+        if (it != page_tables.end() && page_number < it->second.size()) {
+            auto& entry = it->second[page_number];
+
+            if (entry.dirty) {
+                // Save to backing store
+                backing_store[{process_id, page_number}] = {
+                    process_id, page_number, physical_memory[frame_number].data
+                };
+                pages_paged_out++;
+            }
+
+            entry.valid = false;
+            entry.dirty = false;
+            entry.frame_number = -1;
+        }
+
+        physical_memory[frame_number].allocated = false;
+    }
+
+    void page_in_frame(int process_id, int page_number, int frame_number) {
+        auto key = std::make_pair(process_id, page_number);
+        auto it = backing_store.find(key);
+
+        if (it != backing_store.end()) {
+            // Load from backing store
+            physical_memory[frame_number].data = it->second.data;
+            backing_store.erase(it);
+        }
+        else {
+            // Initialize with zeros
+            std::fill(physical_memory[frame_number].data.begin(),
+                physical_memory[frame_number].data.end(), 0);
+        }
     }
 };
 
 // ═══════════════════════════════════════════════════════════════════════
-// SECTION 3: PROCESS CLASS (Enhanced with Memory)
+// SECTION 4: EXTENDED PROCESS CLASS WITH MEMORY SUPPORT
 // ═══════════════════════════════════════════════════════════════════════
 
-/*
-    Process Class:
-    - Represents a single process in the OS
-    - Tracks execution state, timestamps, and progress
-    - Thread-safe with internal mutex
-*/
 class Process {
 public:
     enum State {
@@ -549,7 +629,9 @@ public:
         SUBTRACT,
         SLEEP,
         FOR_BEGIN,
-        FOR_END
+        FOR_END,
+        READ,       // MO2: Memory read
+        WRITE       // MO2: Memory write
     };
 
     struct Operand {
@@ -575,6 +657,10 @@ public:
         uint8_t sleep_ticks = 0;
         // For FOR: repeats, matching indices resolved at runtime via stack
         uint16_t for_repeats = 0;
+        // MO2: For READ/WRITE
+        std::string mem_var;               // variable for READ
+        uint32_t memory_address = 0;       // memory address for READ/WRITE
+        uint16_t write_value = 0;          // value for WRITE
     };
 
     struct LoopFrame {
@@ -583,10 +669,11 @@ public:
         uint16_t remaining;    // times left to execute body
     };
 
-    // Constructor: Creates a new process
-    Process(int id, const std::string& name)
+    // Extended constructor with memory allocation
+    Process(int id, const std::string& name, int mem_size = 0)
         : process_id(id),
         process_name(name),
+        memory_size(mem_size),
         current_line(0),
         core_id(-1),
         state(READY) {
@@ -628,11 +715,20 @@ public:
         std::lock_guard<std::mutex> lock(process_mutex);
         return core_id;
     }
+    int get_cycles_executed() const {
+        std::lock_guard<std::mutex> lock(process_mutex);
+        return cycles_executed;
+    }
     State get_state() const {
         std::lock_guard<std::mutex> lock(process_mutex);
         return state;
     }
     std::string get_timestamp() const { return timestamp; }
+    int get_memory_size() const { return memory_size; }
+    bool has_memory_violation() const { return memory_access_violation; }
+    std::string get_violation_info() const {
+        return violation_time + ". " + violation_address + " invalid.";
+    }
 
     // Setters (thread-safe)
     void set_core_id(int id) {
@@ -643,15 +739,63 @@ public:
         std::lock_guard<std::mutex> lock(process_mutex);
         state = s;
     }
-
-    // Execute one instruction
-    void execute_instruction() {
+    void set_last_execution_tick(uint64_t tick) {
         std::lock_guard<std::mutex> lock(process_mutex);
-        if (state == FINISHED) return;
+        last_execution_tick = tick;
+    }
+
+    // Set memory violation
+    void set_memory_violation(const std::string& address) {
+        memory_access_violation = true;
+        violation_address = address;
+
+        // Get current time
+        time_t now = time(nullptr);
+        char buffer[80];
+#if defined(_MSC_VER)
+        tm timeinfo;
+        localtime_s(&timeinfo, &now);
+        strftime(buffer, sizeof(buffer), "%H:%M:%S", &timeinfo);
+#else
+        tm* timeinfo = localtime(&now);
+        strftime(buffer, sizeof(buffer), "%H:%M:%S", timeinfo);
+#endif
+        violation_time = buffer;
+    }
+
+    // Reset cycles executed
+    void reset_cycles_executed() {
+        std::lock_guard<std::mutex> lock(process_mutex);
+        cycles_executed = 0;
+    }
+
+    // Determine if instruction should be executed based on delay config
+    bool should_execute_instruction(uint64_t current_tick) {
+        std::lock_guard<std::mutex> lock(process_mutex);
+
+        if (DELAYS_PER_EXEC == 0) {
+            // No delay - execute every tick
+            return true;
+        }
+
+        // Check if enough ticks have passed since last execution
+        if (current_tick >= last_execution_tick + DELAYS_PER_EXEC) {
+            last_execution_tick = current_tick;
+            return true;
+        }
+
+        return false;
+    }
+
+    // Execute one instruction with memory manager support
+    void execute_instruction(MemoryManager* memory_manager = nullptr) {
+        std::lock_guard<std::mutex> lock(process_mutex);
+        if (state == FINISHED || memory_access_violation) return;
 
         // Handle sleeping ticks (non-progressing, yields CPU)
         if (sleep_ticks_remaining > 0) {
             sleep_ticks_remaining--;
+            cycles_executed++;
             return; // do not advance current_line
         }
 
@@ -666,7 +810,10 @@ public:
             if (op.is_variable) {
                 auto it = variables.find(op.var_name);
                 if (it == variables.end()) {
-                    variables[op.var_name] = 0; // auto-declare to 0
+                    // Auto-declare to 0 if not found (within variable limit)
+                    if (variables.size() < MAX_VARIABLES) {
+                        variables[op.var_name] = 0;
+                    }
                     return 0;
                 }
                 return it->second;
@@ -688,18 +835,25 @@ public:
             }
             push_log(out.str());
             current_line++;
+            cycles_executed++;
             break;
         }
         case OpCode::DECLARE: {
-            variables[ins.var_name] = ins.declare_value;
+            if (variables.size() < MAX_VARIABLES) {
+                variables[ins.var_name] = ins.declare_value;
+            }
             current_line++;
+            cycles_executed++;
             break;
         }
         case OpCode::ADD: {
             uint32_t a = get_value(ins.op1);
             uint32_t b = get_value(ins.op2);
-            variables[ins.dest_var] = clamp16(a + b);
+            if (variables.size() < MAX_VARIABLES || variables.find(ins.dest_var) != variables.end()) {
+                variables[ins.dest_var] = clamp16(a + b);
+            }
             current_line++;
+            cycles_executed++;
             break;
         }
         case OpCode::SUBTRACT: {
@@ -707,17 +861,21 @@ public:
             int32_t b = (int32_t)get_value(ins.op2);
             int32_t res = a - b;
             if (res < 0) res = 0;
-            variables[ins.dest_var] = (uint16_t)res;
+            if (variables.size() < MAX_VARIABLES || variables.find(ins.dest_var) != variables.end()) {
+                variables[ins.dest_var] = (uint16_t)res;
+            }
             current_line++;
+            cycles_executed++;
             break;
         }
         case OpCode::SLEEP: {
             sleep_ticks_remaining = ins.sleep_ticks; // begin sleeping next cycles
             current_line++;
+            cycles_executed++;
             break;
         }
         case OpCode::FOR_BEGIN: {
-            // Find matching FOR_END by scanning forward (simple, as nesting depth is limited)
+            // Find matching FOR_END by scanning forward
             int depth = 1;
             int match_idx = current_line + 1;
             while (match_idx < (int)program.size() && depth > 0) {
@@ -743,6 +901,7 @@ public:
             LoopFrame frame{ current_line + 1, match_idx, ins.for_repeats };
             loop_stack.push_back(frame);
             current_line = frame.start_index;
+            cycles_executed++;
             break;
         }
         case OpCode::FOR_END: {
@@ -764,6 +923,48 @@ public:
                 loop_stack.pop_back();
                 current_line++;
             }
+            cycles_executed++;
+            break;
+        }
+                            // MO2: Memory access instructions
+        case OpCode::READ: {
+            if (memory_manager == nullptr) {
+                set_memory_violation("Memory manager not available");
+                state = FINISHED;
+                return;
+            }
+
+            uint16_t value;
+            if (!read_from_memory(ins.memory_address, value, memory_manager)) {
+                // Memory violation already set in read_from_memory
+                state = FINISHED;
+                return;
+            }
+
+            // Store in variable
+            if (variables.size() < MAX_VARIABLES || variables.find(ins.mem_var) != variables.end()) {
+                variables[ins.mem_var] = value;
+            }
+
+            current_line++;
+            cycles_executed++;
+            break;
+        }
+        case OpCode::WRITE: {
+            if (memory_manager == nullptr) {
+                set_memory_violation("Memory manager not available");
+                state = FINISHED;
+                return;
+            }
+
+            if (!write_to_memory(ins.memory_address, ins.write_value, memory_manager)) {
+                // Memory violation already set in write_to_memory
+                state = FINISHED;
+                return;
+            }
+
+            current_line++;
+            cycles_executed++;
             break;
         }
         }
@@ -776,12 +977,13 @@ public:
     // Check if process is finished
     bool is_finished() const {
         std::lock_guard<std::mutex> lock(process_mutex);
-        return state == FINISHED || current_line >= (int)program.size();
+        return state == FINISHED || current_line >= (int)program.size() || memory_access_violation;
     }
 
     // Get state as string
     std::string get_state_string() const {
         State s = get_state();
+        if (memory_access_violation) return "Memory Violation";
         switch (s) {
         case READY: return "Ready";
         case RUNNING: return "Running";
@@ -790,38 +992,68 @@ public:
         }
     }
 
-private:
-    int process_id;
-    std::string process_name;
-    int current_line;
-    int core_id;
-    State state;
-    std::string timestamp;
-    mutable std::mutex process_mutex;
-
-    // Instruction program and runtime state
-    std::vector<Instruction> program;
-    std::map<std::string, uint16_t> variables;
-    std::deque<std::string> screen_logs;
-    std::vector<LoopFrame> loop_stack;
-    uint8_t sleep_ticks_remaining{ 0 };
-
-    // MO2: Memory management fields
-    size_t memory_required{ 0 };  // Memory requirement in KB
-
-public:
-    // MO2: Set and get memory requirement
-    void set_memory_required(size_t mem_kb) {
-        std::lock_guard<std::mutex> lock(process_mutex);
-        memory_required = mem_kb;
-    }
-    
-    size_t get_memory_required() const {
-        std::lock_guard<std::mutex> lock(process_mutex);
-        return memory_required;
+    // Variable management for symbol table
+    bool declare_variable(const std::string& name, uint16_t value) {
+        if (variables.size() >= MAX_VARIABLES) return false;
+        variables[name] = value;
+        return true;
     }
 
-public:
+    uint16_t get_variable(const std::string& name) const {
+        auto it = variables.find(name);
+        if (it != variables.end()) return it->second;
+        return 0; // Default to 0 if not found
+    }
+
+    bool set_variable(const std::string& name, uint16_t value) {
+        auto it = variables.find(name);
+        if (it != variables.end()) {
+            it->second = value;
+            return true;
+        }
+        // Auto-declare if within limit
+        if (variables.size() < MAX_VARIABLES) {
+            variables[name] = value;
+            return true;
+        }
+        return false;
+    }
+
+    // Memory access methods that interface with MemoryManager
+    bool read_from_memory(uint32_t address, uint16_t& value, MemoryManager* memory_manager) {
+        if (address >= memory_size) {
+            set_memory_violation("0x" + to_hex_string(address));
+            return false;
+        }
+
+        // Handle page faults
+        while (!memory_manager->read_memory(process_id, address, value)) {
+            int page_number = address / MEM_PER_FRAME;
+            if (!memory_manager->handle_page_fault(process_id, page_number)) {
+                set_memory_violation("0x" + to_hex_string(address));
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool write_to_memory(uint32_t address, uint16_t value, MemoryManager* memory_manager) {
+        if (address >= memory_size) {
+            set_memory_violation("0x" + to_hex_string(address));
+            return false;
+        }
+
+        // Handle page faults
+        while (!memory_manager->write_memory(process_id, address, value)) {
+            int page_number = address / MEM_PER_FRAME;
+            if (!memory_manager->handle_page_fault(process_id, page_number)) {
+                set_memory_violation("0x" + to_hex_string(address));
+                return false;
+            }
+        }
+        return true;
+    }
+
     // Build a basic default program per spec
     void build_default_program() {
         std::lock_guard<std::mutex> lock(process_mutex);
@@ -839,13 +1071,13 @@ public:
         Instruction d{}; d.opcode = OpCode::DECLARE; d.var_name = "x"; d.declare_value = 0; program.push_back(d);
 
         // ADD(x, 5, 10)
-        Instruction a{}; a.opcode = OpCode::ADD; a.dest_var = "x"; 
+        Instruction a{}; a.opcode = OpCode::ADD; a.dest_var = "x";
         a.op1.is_variable = false; a.op1.imm_value = 5;
         a.op2.is_variable = false; a.op2.imm_value = 10;
         program.push_back(a);
 
         // PRINT("Value from: " + x)
-        Instruction p2{}; p2.opcode = OpCode::PRINT; p2.message_prefix = "Value from: "; p2.has_var_in_msg = true; 
+        Instruction p2{}; p2.opcode = OpCode::PRINT; p2.message_prefix = "Value from: "; p2.has_var_in_msg = true;
         p2.msg_var.is_variable = true; p2.msg_var.var_name = "x";
         program.push_back(p2);
 
@@ -854,7 +1086,7 @@ public:
 
         // FOR ( body: ADD(x, x, 1) ; repeats=3 )
         Instruction fb{}; fb.opcode = OpCode::FOR_BEGIN; fb.for_repeats = 3; program.push_back(fb);
-        Instruction ab{}; ab.opcode = OpCode::ADD; ab.dest_var = "x"; 
+        Instruction ab{}; ab.opcode = OpCode::ADD; ab.dest_var = "x";
         ab.op1.is_variable = true; ab.op1.var_name = "x";
         ab.op2.is_variable = false; ab.op2.imm_value = 1;
         program.push_back(ab);
@@ -862,7 +1094,6 @@ public:
     }
 
     // Build a random program with given instruction count range
-    // Following spec: alternating PRINT("Value from: " +x) and ADD(x, x, [1-10])
     void build_random_program(int min_ins, int max_ins) {
         std::lock_guard<std::mutex> lock(process_mutex);
         program.clear();
@@ -887,10 +1118,9 @@ public:
         program.push_back(declare_x);
 
         // Generate alternating PRINT and ADD instructions as per spec
-        // Pattern: PRINT("Value from: " + x), ADD(x, x, [1-10]), repeat
         for (int i = 2; i < num_ins; ++i) {
             Instruction ins{};
-            
+
             if (i % 2 == 0) {
                 // Even index: PRINT("Value from: " + x)
                 ins.opcode = OpCode::PRINT;
@@ -898,7 +1128,8 @@ public:
                 ins.has_var_in_msg = true;
                 ins.msg_var.is_variable = true;
                 ins.msg_var.var_name = "x";
-            } else {
+            }
+            else {
                 // Odd index: ADD(x, x, [1-10])
                 ins.opcode = OpCode::ADD;
                 ins.dest_var = "x";
@@ -906,6 +1137,94 @@ public:
                 ins.op1.var_name = "x";
                 ins.op2.is_variable = false;
                 ins.op2.imm_value = (uint16_t)(1 + rand() % 10); // Random 1-10
+            }
+
+            program.push_back(ins);
+        }
+    }
+
+    // Build custom program from instruction string
+    void build_custom_program(const std::string& instruction_str) {
+        std::lock_guard<std::mutex> lock(process_mutex);
+        program.clear();
+        loop_stack.clear();
+        variables.clear();
+        current_line = 0;
+        state = READY;
+
+        std::vector<std::string> instructions;
+        std::stringstream ss(instruction_str);
+        std::string instruction;
+
+        // Split by semicolon
+        while (std::getline(ss, instruction, ';')) {
+            // Trim whitespace
+            instruction.erase(0, instruction.find_first_not_of(" \t\r\n"));
+            instruction.erase(instruction.find_last_not_of(" \t\r\n") + 1);
+            if (!instruction.empty()) {
+                instructions.push_back(instruction);
+            }
+        }
+
+        // Validate instruction count
+        if (instructions.empty() || instructions.size() > 50) {
+            throw std::invalid_argument("Invalid instruction count (1-50 required)");
+        }
+
+        // Parse each instruction
+        for (const auto& instr : instructions) {
+            std::stringstream iss(instr);
+            std::string opcode;
+            iss >> opcode;
+
+            Instruction ins{};
+
+            if (opcode == "PRINT") {
+                ins.opcode = OpCode::PRINT;
+                std::string message;
+                std::getline(iss, message);
+                // Remove surrounding quotes if present
+                if (message.front() == '"' && message.back() == '"') {
+                    message = message.substr(1, message.length() - 2);
+                }
+                ins.message_prefix = message;
+                ins.has_var_in_msg = false;
+            }
+            else if (opcode == "DECLARE") {
+                ins.opcode = OpCode::DECLARE;
+                std::string var_name;
+                uint16_t value;
+                iss >> var_name >> value;
+                ins.var_name = var_name;
+                ins.declare_value = value;
+            }
+            else if (opcode == "ADD") {
+                ins.opcode = OpCode::ADD;
+                std::string dest, op1, op2;
+                iss >> dest >> op1 >> op2;
+                ins.dest_var = dest;
+
+                // Parse operands
+                ins.op1 = parse_operand(op1);
+                ins.op2 = parse_operand(op2);
+            }
+            else if (opcode == "READ") {
+                ins.opcode = OpCode::READ;
+                std::string var_name, addr_str;
+                iss >> var_name >> addr_str;
+                ins.mem_var = var_name;
+                ins.memory_address = parse_hex_address(addr_str);
+            }
+            else if (opcode == "WRITE") {
+                ins.opcode = OpCode::WRITE;
+                std::string addr_str;
+                uint16_t value;
+                iss >> addr_str >> value;
+                ins.memory_address = parse_hex_address(addr_str);
+                ins.write_value = value;
+            }
+            else {
+                throw std::invalid_argument("Unknown instruction: " + opcode);
             }
 
             program.push_back(ins);
@@ -948,49 +1267,104 @@ public:
         return std::vector<std::string>(screen_logs.begin(), screen_logs.end());
     }
 
+private:
+    int process_id;
+    std::string process_name;
+    int memory_size;
+    int current_line;
+    int core_id;
+    State state;
+    std::string timestamp;
+    mutable std::mutex process_mutex;
+    uint64_t last_execution_tick{ 0 };
+    int cycles_executed{ 0 };
+
+    // MO2: Memory violation tracking
+    bool memory_access_violation = false;
+    std::string violation_address;
+    std::string violation_time;
+
+    // Instruction program and runtime state
+    std::vector<Instruction> program;
+    std::map<std::string, uint16_t> variables;
+    std::deque<std::string> screen_logs;
+    std::vector<LoopFrame> loop_stack;
+    uint8_t sleep_ticks_remaining{ 0 };
+
+    std::string to_hex_string(uint32_t value) const {
+        std::stringstream ss;
+        ss << std::hex << value;
+        return ss.str();
+    }
+
+    Operand parse_operand(const std::string& str) {
+        Operand op;
+        // Check if it's a number
+        if (std::all_of(str.begin(), str.end(), ::isdigit)) {
+            op.is_variable = false;
+            op.imm_value = static_cast<uint16_t>(std::stoi(str));
+        }
+        else {
+            op.is_variable = true;
+            op.var_name = str;
+        }
+        return op;
+    }
+
+    uint32_t parse_hex_address(const std::string& str) {
+        if (str.substr(0, 2) == "0x") {
+            return static_cast<uint32_t>(std::stoul(str.substr(2), nullptr, 16));
+        }
+        return static_cast<uint32_t>(std::stoul(str));
+    }
 };
 
 // ═══════════════════════════════════════════════════════════════════════
-// SECTION 3: SCHEDULER CLASS
+// SECTION 5: EXTENDED SCHEDULER WITH MEMORY MANAGEMENT
 // ═══════════════════════════════════════════════════════════════════════
 
-/*
-    Scheduler Class:
-    - Manages process queue and CPU cores
-    - Implements FCFS or Round-Robin scheduling
-    - Runs in separate thread
-*/
 class Scheduler {
 public:
-    Scheduler(int num_cores, const std::string& type, int quantum, std::shared_ptr<MemoryManager> mem_mgr = nullptr)
+    Scheduler(int num_cores, const std::string& type, int quantum)
         : num_cores(num_cores),
         scheduler_type(type),
         quantum_cycles(quantum),
         running(false),
-        next_process_id(0),
-        memory_manager(mem_mgr) {
+        next_process_id(0) {
 
+        // Initialize memory manager
+        memory_manager = std::make_unique<MemoryManager>(MAX_OVERALL_MEM, MEM_PER_FRAME);
         cpu_cores.resize(num_cores, nullptr);
     }
 
-    // Add a new process to the ready queue (MO2: with memory allocation)
-    void add_process(const std::string& name, int /*instructions_unused*/) {
+    // Add a new process to the ready queue with memory allocation
+    void add_process(const std::string& name, int memory_size, const std::string& instructions = "") {
         std::lock_guard<std::mutex> lock(scheduler_mutex);
-        auto process = std::make_shared<Process>(next_process_id++, name);
-        process->build_random_program(MIN_INS, MAX_INS);
-        
-        // MO2: Assign random memory requirement
-        size_t mem_req = MIN_MEM_PER_PROC + (rand() % (MAX_MEM_PER_PROC - MIN_MEM_PER_PROC + 1));
-        process->set_memory_required(mem_req);
-        
-        // MO2: Allocate memory if memory manager exists
-        if (memory_manager) {
-            if (!memory_manager->allocate_process(process->get_id(), mem_req)) {
-                // Memory allocation failed - still add to queue, will handle paging
-                std::cerr << "Warning: Initial memory allocation failed for process " << name << "\\n";
-            }
+
+        // Validate memory size
+        if (memory_size < MIN_MEMORY_ALLOC || memory_size > MAX_MEMORY_ALLOC) {
+            throw std::invalid_argument("Memory size must be between 64 and 65536 bytes");
         }
-        
+
+        if ((memory_size & (memory_size - 1)) != 0) {
+            throw std::invalid_argument("Memory size must be power of 2");
+        }
+
+        auto process = std::make_shared<Process>(next_process_id++, name, memory_size);
+
+        // Allocate memory
+        if (!memory_manager->allocate_memory(process->get_id(), memory_size)) {
+            throw std::runtime_error("Memory allocation failed");
+        }
+
+        // Build program based on instructions or default
+        if (instructions.empty()) {
+            process->build_random_program(MIN_INS, MAX_INS);
+        }
+        else {
+            process->build_custom_program(instructions);
+        }
+
         ready_queue.push(process);
         all_processes[name] = process;
         queue_cv.notify_one();
@@ -1021,6 +1395,9 @@ public:
         return cpu_ticks.load();
     }
 
+    // Get memory manager
+    MemoryManager* get_memory_manager() { return memory_manager.get(); }
+
     // Start the scheduler
     void start() {
         running = true;
@@ -1035,7 +1412,9 @@ public:
         if (scheduler_thread.joinable()) {
             scheduler_thread.join();
         }
-        // Worker threads are detached, so no need to join them
+
+        // Save backing store on shutdown
+        memory_manager->save_backing_store();
     }
 
     // Check if scheduler is running
@@ -1056,10 +1435,25 @@ public:
         finished_processes = 0;
 
         for (auto& pair : all_processes) {
-            if (pair.second->get_state() == Process::FINISHED) {
+            if (pair.second->get_state() == Process::FINISHED ||
+                pair.second->has_memory_violation()) {
                 finished_processes++;
             }
         }
+    }
+
+    // Get detailed statistics for vmstat
+    void get_detailed_stats(int& total_memory, int& used_memory, int& free_memory,
+        int& idle_ticks, int& active_ticks, int& total_ticks,
+        int& paged_in, int& paged_out) {
+        int total_pages, used_pages, free_pages;
+        memory_manager->get_memory_stats(total_memory, used_memory, free_memory,
+            total_pages, used_pages, free_pages);
+        memory_manager->get_paging_stats(paged_in, paged_out);
+
+        idle_ticks = idle_cpu_ticks.load();
+        active_ticks = active_cpu_ticks.load();
+        total_ticks = total_cpu_ticks.load();
     }
 
     // Notifies the scheduler
@@ -1071,99 +1465,81 @@ public:
 private:
     // Main scheduler loop (runs in separate thread)
     void scheduler_loop() {
+        auto last_tick_time = std::chrono::steady_clock::now();
+        const auto tick_interval = std::chrono::milliseconds(10); // 10ms per tick
+
         while (running) {
-            std::unique_lock<std::mutex> lock(scheduler_mutex);
+            auto current_time = std::chrono::steady_clock::now();
+            auto elapsed = current_time - last_tick_time;
 
-            // Wait for processes in queue
-            queue_cv.wait_for(lock, std::chrono::milliseconds(100), [this] {
-                return !ready_queue.empty() || !running;
-                });
+            // Only proceed if it's time for the next tick
+            if (elapsed >= tick_interval) {
+                last_tick_time = current_time;
 
-            if (!running) break;
+                std::unique_lock<std::mutex> lock(scheduler_mutex);
 
-            // Check for free CPU cores and assign processes
-            for (int core = 0; core < num_cores; ++core) {
-                // If core is free and queue has processes
-                if (cpu_cores[core] == nullptr && !ready_queue.empty()) {
-                    auto process = ready_queue.front();
-                    ready_queue.pop();
+                // Update CPU tick statistics
+                total_cpu_ticks++;
+                int active_cores = 0;
 
-                    cpu_cores[core] = process;
-                    process->set_core_id(core);
-                    process->set_state(Process::RUNNING);
+                // Execute one cycle for all running processes
+                for (int core = 0; core < num_cores; ++core) {
+                    if (cpu_cores[core] != nullptr) {
+                        active_cores++;
+                        auto& process = cpu_cores[core];
 
-                    // Launch execution thread for this process
-                    std::thread t(&Scheduler::execute_process, this, process, core);
-                    t.detach();  // Detach thread to avoid join issues on exit
-                }
-            }
+                        // Execute instructions based on delays-per-exec
+                        if (process->should_execute_instruction(cpu_ticks)) {
+                            process->execute_instruction(memory_manager.get());
 
-            lock.unlock();
-            cpu_ticks++; // simulate CPU tick increment
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-    }
-
-    // Execute a process (runs in separate thread per process)
-    void execute_process(std::shared_ptr<Process> process, int core) {
-        // MO2: Simulate memory paging - page in first page when process starts
-        if (memory_manager) {
-            memory_manager->page_in(process->get_id(), 0);  // Page in first page
-        }
-        
-        if (scheduler_type == "fcfs") {
-            // FCFS: Run process to completion
-            int instruction_count = 0;
-            while (!process->is_finished() && running) {
-                // MO2: Simulate memory access - page in periodically
-                if (memory_manager && instruction_count % 50 == 0) {
-                    size_t page_num = (instruction_count / 50) % ((process->get_memory_required() + MEM_PER_FRAME - 1) / MEM_PER_FRAME);
-                    memory_manager->page_in(process->get_id(), page_num);
-                }
-                
-                process->execute_instruction();
-                instruction_count++;
-                std::this_thread::sleep_for(std::chrono::milliseconds(DELAYS_PER_EXEC));
-            }
-        }
-        else if (scheduler_type == "rr") {
-            // Round-Robin: Execute for quantum cycles, then requeue if not finished
-            int cycles_executed = 0;
-            while (!process->is_finished() && running && cycles_executed < quantum_cycles) {
-                // MO2: Simulate memory access
-                if (memory_manager && cycles_executed % 10 == 0) {
-                    int current_line = process->get_current_line();
-                    size_t page_num = (current_line / 10) % ((process->get_memory_required() + MEM_PER_FRAME - 1) / MEM_PER_FRAME);
-                    if (page_num < ((process->get_memory_required() + MEM_PER_FRAME - 1) / MEM_PER_FRAME)) {
-                        memory_manager->page_in(process->get_id(), page_num);
+                            // Check if process finished or quantum expired
+                            if (process->is_finished()) {
+                                process->set_state(Process::FINISHED);
+                                process->set_core_id(-1);
+                                // Deallocate memory when process finishes
+                                memory_manager->deallocate_memory(process->get_id());
+                                cpu_cores[core] = nullptr;
+                            }
+                            else if (scheduler_type == "rr" &&
+                                process->get_cycles_executed() >= quantum_cycles) {
+                                // Round Robin: time slice expired, requeue
+                                process->set_state(Process::READY);
+                                process->set_core_id(-1);
+                                process->reset_cycles_executed();
+                                ready_queue.push(process);
+                                cpu_cores[core] = nullptr;
+                            }
+                        }
                     }
                 }
-                
-                process->execute_instruction();
-                cycles_executed++;
-                std::this_thread::sleep_for(std::chrono::milliseconds(DELAYS_PER_EXEC));
-            }
-        }
 
-        // If process is not finished, put it back in the queue (for RR)
-        if (!process->is_finished() && running && scheduler_type == "rr") {
-            std::lock_guard<std::mutex> lock(scheduler_mutex);
-            process->set_state(Process::READY);
-            process->set_core_id(-1);
-            ready_queue.push(process);
-            cpu_cores[core] = nullptr;
-            queue_cv.notify_one();
-        }
-        else {
-            // Mark finished and free the core
-            process->set_state(Process::FINISHED);
-            process->set_core_id(-1);
-            std::lock_guard<std::mutex> lock(scheduler_mutex);
-            cpu_cores[core] = nullptr;
-            
-            // MO2: Deallocate memory when process finishes
-            if (memory_manager) {
-                memory_manager->deallocate_process(process->get_id());
+                // Update idle/active ticks
+                if (active_cores > 0) {
+                    active_cpu_ticks++;
+                }
+                else {
+                    idle_cpu_ticks++;
+                }
+
+                // Assign processes to free cores
+                for (int core = 0; core < num_cores; ++core) {
+                    if (cpu_cores[core] == nullptr && !ready_queue.empty()) {
+                        auto process = ready_queue.front();
+                        ready_queue.pop();
+
+                        cpu_cores[core] = process;
+                        process->set_core_id(core);
+                        process->set_state(Process::RUNNING);
+                        process->set_last_execution_tick(cpu_ticks);
+                    }
+                }
+
+                lock.unlock();
+                cpu_ticks++; // Increment CPU tick counter
+            }
+            else {
+                // Sleep briefly to avoid busy waiting
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         }
     }
@@ -1177,22 +1553,21 @@ private:
     std::queue<std::shared_ptr<Process>> ready_queue;
     std::vector<std::shared_ptr<Process>> cpu_cores;
     std::map<std::string, std::shared_ptr<Process>> all_processes;
+    std::unique_ptr<MemoryManager> memory_manager;
 
     std::mutex scheduler_mutex;
     std::condition_variable queue_cv;
     std::atomic<uint64_t> cpu_ticks{ 0 };
     std::thread scheduler_thread;
-    
-    // MO2: Memory Manager
-    std::shared_ptr<MemoryManager> memory_manager;
 
-public:
-    // MO2: Get memory manager
-    std::shared_ptr<MemoryManager> get_memory_manager() { return memory_manager; }
+    // MO2: CPU statistics
+    std::atomic<int> idle_cpu_ticks{ 0 };
+    std::atomic<int> active_cpu_ticks{ 0 };
+    std::atomic<int> total_cpu_ticks{ 0 };
 };
 
 // ═══════════════════════════════════════════════════════════════════════
-// SECTION 4: CONSOLE UI MANAGEMENT
+// SECTION 6: CONSOLE UI MANAGEMENT (Existing with MO2 extensions)
 // ═══════════════════════════════════════════════════════════════════════
 
 /*
@@ -1220,7 +1595,6 @@ std::thread batch_thread;
 std::mutex batch_mutex;
 std::mutex console_mutex;
 std::unique_ptr<Scheduler> scheduler;
-std::shared_ptr<MemoryManager> memory_manager;  // MO2: Memory Manager
 std::queue<std::string> command_queue;
 std::mutex command_queue_mutex;
 std::condition_variable command_queue_cv;
@@ -1228,7 +1602,7 @@ std::atomic<int> global_process_counter{ 1 };
 std::atomic<bool> suspend_cpu_display{ false };
 
 // ═══════════════════════════════════════════════════════════════════════
-// SECTION 5: TERMINAL CONTROL FUNCTIONS
+// SECTION 7: TERMINAL CONTROL FUNCTIONS (Existing)
 // ═══════════════════════════════════════════════════════════════════════
 
 // Enable ANSI colors on Windows
@@ -1300,7 +1674,7 @@ void clear_line(int row) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// SECTION 6: UI DISPLAY FUNCTIONS
+// SECTION 8: UI DISPLAY FUNCTIONS (Existing with MO2 extensions)
 // ═══════════════════════════════════════════════════════════════════════
 
 // Display the main UI
@@ -1311,7 +1685,7 @@ void display_main_ui() {
     gotoxy(1, layout.header_row);
     std::cout << Colors::BOLD << Colors::BRIGHT_BLUE
         << "========================================================================================================\n"
-        << "                        CSOPESY OS EMULATOR - PROCESS SCHEDULER (MO1)                                   \n"
+        << "                        CSOPESY OS EMULATOR - MULTITASKING OS (MO2)                                   \n"
         << "========================================================================================================\n"
         << Colors::RESET;
 
@@ -1355,7 +1729,6 @@ void display_main_ui() {
 
 // Display welcome screen
 void display_welcome() {
-    suspend_cpu_display = true;
     clear_screen();
 
     std::cout << Colors::BOLD << Colors::BRIGHT_CYAN
@@ -1369,7 +1742,7 @@ void display_welcome() {
         << "Co, Joshua Benedict B.\n"
         << "Tan, Reyvin Matthew T.\n"
         << "\n"
-        << Colors::BRIGHT_CYAN << "Last updated: " << Colors::YELLOW << "11-5-2025\n"
+        << Colors::BRIGHT_CYAN << "Last updated: " << Colors::YELLOW << "11-30-2025\n"
         << Colors::BRIGHT_CYAN
         << "=========================================\n"
         << Colors::RESET;
@@ -1377,12 +1750,10 @@ void display_welcome() {
     std::cout << "\nPress Enter to continue..." << std::flush;
     std::string dummy;
     std::getline(std::cin, dummy);
-    suspend_cpu_display = false;
 }
 
 // Update CPU utilization display
 void update_cpu_display() {
-    if (suspend_cpu_display) return;
     if (scheduler && system_initialized) {
         static int last_active = -1, last_running = -1, last_finished = -1;
         static uint64_t last_ticks = 0;
@@ -1391,8 +1762,12 @@ void update_cpu_display() {
         scheduler->get_stats(active, total, running, finished);
         uint64_t ticks = scheduler->get_cpu_ticks();
 
-        // Redraw if any observed value changed (including ticks)
-        if (active != last_active || running != last_running || finished != last_finished || ticks != last_ticks) {
+        // Only update if significant changes occurred (process counts changed OR every 5 ticks)
+        bool significant_change = (active != last_active || running != last_running || 
+                                   finished != last_finished || (ticks - last_ticks) >= 5);
+        
+        // Redraw if significant change AND display is not suspended
+        if (significant_change && !suspend_cpu_display) {
             last_active = active;
             last_running = running;
             last_finished = finished;
@@ -1404,12 +1779,31 @@ void update_cpu_display() {
             printf("\033[%d;%dH", layout.cpu_util_row + 1, 1);
             printf("%s", std::string(layout.screen_width, ' ').c_str());
             printf("\033[%d;%dH", layout.cpu_util_row + 1, 1);
-            printf("%sCPU Utilization: %s%d/%d cores active%s | %sRunning: %s%d%s | %sFinished: %s%d%s | %sCPU Ticks: %s%llu%s",
+
+            double utilization = (total > 0) ? (active * 100.0 / total) : 0;
+
+            printf(
+                "%sCPU Utilization: %s%.0f%%%s   "
+                "| %sCores Active:%s %d/%d   "
+                "| %sRunning:%s %d   "
+                "| %sFinished:%s %d   "
+                "| %sCPU Ticks:%s %llu%s",
                 Colors::BRIGHT_WHITE.c_str(),
-                Colors::CYAN.c_str(), active, total, Colors::RESET.c_str(),
-                Colors::BRIGHT_WHITE.c_str(), Colors::GREEN.c_str(), running, Colors::RESET.c_str(),
-                Colors::BRIGHT_WHITE.c_str(), Colors::YELLOW.c_str(), finished, Colors::RESET.c_str(),
-                Colors::BRIGHT_WHITE.c_str(), Colors::BRIGHT_CYAN.c_str(), (unsigned long long)ticks, Colors::RESET.c_str());
+                Colors::CYAN.c_str(), utilization, Colors::RESET.c_str(),
+
+                Colors::BRIGHT_WHITE.c_str(), Colors::CYAN.c_str(),
+                active, total,
+
+                Colors::BRIGHT_WHITE.c_str(), Colors::GREEN.c_str(),
+                running,
+
+                Colors::BRIGHT_WHITE.c_str(), Colors::YELLOW.c_str(),
+                finished,
+
+                Colors::BRIGHT_WHITE.c_str(), Colors::BRIGHT_CYAN.c_str(),
+                (unsigned long long)ticks,
+                Colors::RESET.c_str()
+            );
             printf("\033[u");  // Restore cursor position
             fflush(stdout);
         }
@@ -1431,9 +1825,14 @@ void display_help() {
         << "\n    - Starts the OS emulator and scheduler\n"
         << "    - Must be run before creating processes\n";
 
-    std::cout << Colors::BRIGHT_YELLOW << "\n  screen -s <name>" << Colors::WHITE
-        << "\n    - Creates a new process with the given name\n"
-        << "    - Example: screen -s myProcess\n";
+    std::cout << Colors::BRIGHT_YELLOW << "\n  screen -s <name> <memory_size>" << Colors::WHITE
+        << "\n    - Creates a new process with given name and memory allocation\n"
+        << "    - Memory size must be power of 2 between 64-65536 bytes\n"
+        << "    - Example: screen -s myProcess 256\n";
+
+    std::cout << Colors::BRIGHT_YELLOW << "\n  screen -c <name> <memory_size> \"<instructions>\"" << Colors::WHITE
+        << "\n    - Creates process with custom instructions\n"
+        << "    - Example: screen -c process2 128 \"DECLARE x 10; ADD x x 5; PRINT x\"\n";
 
     std::cout << Colors::BRIGHT_YELLOW << "\n  screen -r <name>" << Colors::WHITE
         << "\n    - Opens the screen of a specific process\n"
@@ -1444,25 +1843,19 @@ void display_help() {
         << "\n    - Lists all processes and their states\n";
 
     std::cout << Colors::BRIGHT_YELLOW << "\n  scheduler-start" << Colors::WHITE
-        << "\n    - Begins automatic process generation every batch-process-freq seconds\n";
+        << "\n    - Begins automatic process generation every batch-process-freq CPU TICKS\n";
 
     std::cout << Colors::BRIGHT_YELLOW << "\n  scheduler-stop" << Colors::WHITE
         << "\n    - Stops automatic process generation only (scheduler continues running)\n";
 
-    std::cout << Colors::BRIGHT_YELLOW << "\n  report-util" << Colors::WHITE
-        << "\n    - Generates a CPU utilization report\n";
+    std::cout << Colors::BRIGHT_YELLOW << "\n  process-smi" << Colors::WHITE
+        << "\n    - Shows memory usage and process list with memory allocation\n";
 
     std::cout << Colors::BRIGHT_YELLOW << "\n  vmstat" << Colors::WHITE
-        << "\n    - Displays virtual memory statistics (MO2)\n"
-        << "    - Shows total/used/free memory, frames, and paging activity\n";
+        << "\n    - Detailed memory and paging statistics\n";
 
-    std::cout << Colors::BRIGHT_YELLOW << "\n  process-smi" << Colors::WHITE
-        << "\n    - Displays process memory information (MO2)\n"
-        << "    - Shows CPU utilization, memory usage, and per-process memory details\n";
-
-    std::cout << Colors::BRIGHT_YELLOW << "\n  scheduler-test" << Colors::WHITE
-        << "\n    - Automated scheduler testing (MO2)\n"
-        << "    - Starts automatic process generation for testing\n";
+    std::cout << Colors::BRIGHT_YELLOW << "\n  report-util" << Colors::WHITE
+        << "\n    - Generates a CPU utilization report\n";
 
     std::cout << Colors::BRIGHT_YELLOW << "\n  clear" << Colors::WHITE
         << "\n    - Clears the screen\n";
@@ -1491,6 +1884,8 @@ void display_process_screen(std::shared_ptr<Process> process) {
         << Colors::RESET << "\n";
     std::cout << Colors::BRIGHT_WHITE << "Created: " << Colors::RESET
         << process->get_timestamp() << "\n";
+    std::cout << Colors::BRIGHT_WHITE << "Memory: " << Colors::RESET
+        << process->get_memory_size() << " bytes\n";
 
     std::cout << "\nCurrent instruction line: " << process->get_current_line()
         << "\nTotal lines of instruction: " << process->get_total_commands() << "\n";
@@ -1518,7 +1913,11 @@ void display_process_screen(std::shared_ptr<Process> process) {
 
     std::cout << "-----------------------------------------------------------------------------\n";
 
-    if (current >= total) {
+    if (process->has_memory_violation()) {
+        std::cout << Colors::BRIGHT_RED << "\n[MEMORY VIOLATION] Process shut down: "
+            << process->get_violation_info() << "\n" << Colors::RESET;
+    }
+    else if (current >= total) {
         std::cout << Colors::BRIGHT_GREEN << "\n[FINISHED] Process finished!\n" << Colors::RESET;
     }
     else {
@@ -1547,11 +1946,9 @@ void display_process_list() {
         << Colors::CYAN << std::fixed << std::setprecision(0)
         << utilization << "%" << Colors::RESET << "\n";
 
-    std::cout << Colors::BRIGHT_WHITE << "Cores used: "
-        << Colors::GREEN << active << Colors::RESET << "\n";
+    std::cout << Colors::BRIGHT_WHITE << "Cores active: "
+        << Colors::GREEN << active << "/" << total << Colors::RESET << "\n";
 
-    std::cout << Colors::BRIGHT_WHITE << "Cores available: "
-        << Colors::YELLOW << (total - active) << Colors::RESET << "\n";
 
     std::cout << Colors::BRIGHT_BLUE
         << "-------------------------------------------------------------\n"
@@ -1562,10 +1959,13 @@ void display_process_list() {
 
     std::vector<std::shared_ptr<Process>> running_procs;
     std::vector<std::shared_ptr<Process>> finished_procs;
+    std::vector<std::shared_ptr<Process>> violation_procs;
 
     for (auto& p : processes) {
-        auto state = p->get_state();
-        if (state == Process::FINISHED)
+        if (p->has_memory_violation()) {
+            violation_procs.push_back(p);
+        }
+        else if (p->get_state() == Process::FINISHED)
             finished_procs.push_back(p);
         else
             running_procs.push_back(p);
@@ -1577,6 +1977,7 @@ void display_process_list() {
         };
     std::sort(running_procs.begin(), running_procs.end(), byName);
     std::sort(finished_procs.begin(), finished_procs.end(), byName);
+    std::sort(violation_procs.begin(), violation_procs.end(), byName);
 
     // RUNNING PROCESSES
     std::cout << Colors::BRIGHT_WHITE << "Running processes:\n" << Colors::RESET;
@@ -1595,6 +1996,8 @@ void display_process_list() {
                 << " (" << Colors::YELLOW << p->get_timestamp() << Colors::RESET << ")   "
                 << "Core: " << Colors::GREEN << core_display << Colors::RESET
                 << "   "
+                << "Mem: " << Colors::MAGENTA << p->get_memory_size() << "B" << Colors::RESET
+                << "   "
                 << Colors::WHITE << p->get_current_line()
                 << " / " << p->get_total_commands()
                 << Colors::RESET << "\n";
@@ -1612,8 +2015,24 @@ void display_process_list() {
                 << Colors::RESET
                 << " (" << Colors::YELLOW << p->get_timestamp() << Colors::RESET << ")   "
                 << Colors::GREEN << "Finished" << Colors::RESET << "   "
+                << "Mem: " << Colors::MAGENTA << p->get_memory_size() << "B" << Colors::RESET
+                << "   "
                 << Colors::WHITE << p->get_total_commands()
                 << " / " << p->get_total_commands()
+                << Colors::RESET << "\n";
+        }
+    }
+
+    // MEMORY VIOLATION PROCESSES
+    if (!violation_procs.empty()) {
+        std::cout << "\n" << Colors::BRIGHT_RED << "Memory violation processes:\n" << Colors::RESET;
+        for (auto& p : violation_procs) {
+            std::cout << Colors::BRIGHT_RED
+                << std::left << std::setw(12) << p->get_name()
+                << Colors::RESET
+                << " (" << Colors::YELLOW << p->get_timestamp() << Colors::RESET << ")   "
+                << Colors::BRIGHT_RED << "Memory Violation" << Colors::RESET << "   "
+                << Colors::WHITE << p->get_violation_info()
                 << Colors::RESET << "\n";
         }
     }
@@ -1625,6 +2044,9 @@ void display_process_list() {
     std::cout << Colors::WHITE << "Press Enter to continue..." << Colors::RESET << std::flush;
     std::string dummy;
     std::getline(std::cin, dummy);
+    
+    // Redraw the main UI after returning from screen -ls
+    display_main_ui();
     suspend_cpu_display = false;
 }
 
@@ -1640,6 +2062,14 @@ void generate_report() {
 
     auto processes = scheduler->get_all_processes();
     size_t total_processes = processes.size();
+
+    // MO2: Get memory statistics
+    int total_memory, used_memory, free_memory;
+    int idle_ticks, active_ticks, total_ticks;
+    int paged_in, paged_out;
+    scheduler->get_detailed_stats(total_memory, used_memory, free_memory,
+        idle_ticks, active_ticks, total_ticks,
+        paged_in, paged_out);
 
     time_t now = time(nullptr);
     char timestamp[80];
@@ -1668,14 +2098,28 @@ void generate_report() {
         return;
     }
 
-    file << "CSOPESY OS Emulator - CPU Utilization Report\n";
-    file << "=============================================\n";
+    file << "CSOPESY OS Emulator - CPU and Memory Utilization Report\n";
+    file << "=======================================================\n";
     file << "Generated: " << timestamp << "\n\n";
 
+    file << "CPU Statistics:\n";
+    file << "---------------\n";
     file << "CPU Cores: " << total_cores << "\n";
     file << "Active Cores: " << active << "\n";
-    file << "CPU Utilization: " << (total_cores > 0 ? (active * 100.0 / total_cores) : 0) << "%\n\n";
-    file << "CPU Ticks: " << scheduler->get_cpu_ticks() << "\n\n";
+    file << "CPU Utilization: " << (total_cores > 0 ? (active * 100.0 / total_cores) : 0) << "%\n";
+    file << "CPU Ticks: " << scheduler->get_cpu_ticks() << "\n";
+    file << "Active CPU Ticks: " << active_ticks << "\n";
+    file << "Idle CPU Ticks: " << idle_ticks << "\n";
+    file << "Total CPU Ticks: " << total_ticks << "\n\n";
+
+    file << "Memory Statistics:\n";
+    file << "------------------\n";
+    file << "Total Memory: " << total_memory << " bytes\n";
+    file << "Used Memory: " << used_memory << " bytes\n";
+    file << "Free Memory: " << free_memory << " bytes\n";
+    file << "Memory Utilization: " << (total_memory > 0 ? (used_memory * 100.0 / total_memory) : 0) << "%\n";
+    file << "Pages Paged In: " << paged_in << "\n";
+    file << "Pages Paged Out: " << paged_out << "\n\n";
 
     file << "Process Statistics:\n";
     file << "-------------------\n";
@@ -1691,8 +2135,12 @@ void generate_report() {
         file << "  ID: " << process->get_id() << "\n";
         file << "  State: " << process->get_state_string() << "\n";
         file << "  Core: " << (process->get_core_id() >= 0 ? std::to_string(process->get_core_id()) : "N/A") << "\n";
+        file << "  Memory: " << process->get_memory_size() << " bytes\n";
         file << "  Progress: " << process->get_current_line() << "/" << process->get_total_commands() << "\n";
         file << "  Created: " << process->get_timestamp() << "\n";
+        if (process->has_memory_violation()) {
+            file << "  Memory Violation: " << process->get_violation_info() << "\n";
+        }
     }
 
     file.close();
@@ -1700,74 +2148,167 @@ void generate_report() {
     std::cout << Colors::BRIGHT_GREEN << "Report generated: " << filename << Colors::RESET << "\n";
 }
 
-
 // ═══════════════════════════════════════════════════════════════════════
-// SECTION 7: COMMAND HANDLERS
+// SECTION 9: MO2 COMMAND HANDLERS
 // ═══════════════════════════════════════════════════════════════════════
 
-// Handle 'initialize' command
-void cmd_initialize() {
-    if (system_initialized) {
-        std::cout << Colors::YELLOW << "System already initialized!\n" << Colors::RESET;
+// Handle 'process-smi' command
+void cmd_process_smi() {
+    if (!system_initialized) {
+        std::cout << Colors::RED << "Error: System not initialized.\n" << Colors::RESET;
         return;
     }
 
-    // MO2: Create memory manager
-    memory_manager = std::make_shared<MemoryManager>(MAX_OVERALL_MEM, MEM_PER_FRAME);
-    
-    // Create scheduler with memory manager
-    scheduler = std::make_unique<Scheduler>(NUM_CPU, SCHEDULER_TYPE, QUANTUM_CYCLES, memory_manager);
-    scheduler->start();
-    system_initialized = true;
+    int total_memory, used_memory, free_memory, total_pages, used_pages, free_pages;
+    scheduler->get_memory_manager()->get_memory_stats(total_memory, used_memory, free_memory,
+        total_pages, used_pages, free_pages);
 
-    std::cout << Colors::BRIGHT_GREEN << "OS Emulator initialized successfully!\n" << Colors::RESET;
-    std::cout << Colors::CYAN << "Scheduler type: " << SCHEDULER_TYPE << "\n";
-    std::cout << "CPU cores: " << NUM_CPU << "\n";
-    std::cout << "Memory: " << MAX_OVERALL_MEM << " KB total, " << MEM_PER_FRAME << " KB per frame\n" << Colors::RESET;
+    int active, total_cores, running, finished;
+    scheduler->get_stats(active, total_cores, running, finished);
+
+    double memory_util = total_memory > 0 ? (used_memory * 100.0 / total_memory) : 0;
+    double cpu_util = total_cores > 0 ? (active * 100.0 / total_cores) : 0;
+
+    std::cout << Colors::BRIGHT_CYAN
+        << "----------------------------------------------------------------------\n"
+        << "! PROCESS-SMI V01.00 Driver Version: 01.00 !\n"
+        << "----------------------------------------------------------------------\n"
+        << Colors::RESET;
+
+    std::cout << Colors::BRIGHT_WHITE << "CPU-Util: " << Colors::GREEN
+        << std::fixed << std::setprecision(1) << cpu_util << "%\n"
+        << Colors::BRIGHT_WHITE << "Memory Usage: " << Colors::YELLOW
+        << used_memory << "B / " << total_memory << "B\n"
+        << Colors::BRIGHT_WHITE << "Memory Util: " << Colors::CYAN
+        << std::fixed << std::setprecision(1) << memory_util << "%\n"
+        << Colors::RESET;
+
+    std::cout << Colors::BRIGHT_WHITE
+        << "\nRunning processes and memory usage:\n"
+        << "-----------------------------------\n"
+        << Colors::RESET;
+
+    auto processes = scheduler->get_all_processes();
+    bool found_running = false;
+    for (auto& process : processes) {
+        if (process->get_state() != Process::FINISHED && !process->has_memory_violation()) {
+            std::cout << Colors::BRIGHT_GREEN << std::left << std::setw(15)
+                << process->get_name()
+                << Colors::YELLOW << process->get_memory_size() << "B\n"
+                << Colors::RESET;
+            found_running = true;
+        }
+    }
+
+    if (!found_running) {
+        std::cout << Colors::WHITE << "  (no running processes)\n" << Colors::RESET;
+    }
+
+    std::cout << Colors::BRIGHT_CYAN
+        << "----------------------------------------------------------------------\n"
+        << Colors::RESET;
 }
 
-// Handle 'screen -s <name>' command
-void cmd_screen_create(const std::string& name) {
+// Handle 'vmstat' command
+void cmd_vmstat() {
     if (!system_initialized) {
-        std::cout << Colors::RED << "Error: System not initialized. Run 'initialize' first.\n"
-            << Colors::RESET;
+        std::cout << Colors::RED << "Error: System not initialized.\n" << Colors::RESET;
         return;
     }
 
-    // Check if process already exists
-    if (scheduler->get_process(name)) {
-        std::cout << Colors::RED << "Error: Process '" << name << "' already exists!\n"
-            << Colors::RESET;
-        return;
-    }
+    int total_memory, used_memory, free_memory;
+    int idle_ticks, active_ticks, total_ticks;
+    int paged_in, paged_out;
 
-    // Create process with default program (instruction count now derived from program)
-    scheduler->add_process(name, 0);
-    auto p = scheduler->get_process(name);
-    int instructions = p ? p->get_total_commands() : 0;
-    std::cout << Colors::BRIGHT_GREEN << "Process '" << name << "' created with "
-        << instructions << " instructions.\n" << Colors::RESET;
+    scheduler->get_detailed_stats(total_memory, used_memory, free_memory,
+        idle_ticks, active_ticks, total_ticks,
+        paged_in, paged_out);
+
+    std::cout << Colors::BRIGHT_BLUE << "Virtual Memory Statistics\n"
+        << "=======================\n" << Colors::RESET;
+
+    std::cout << std::left << std::setw(25) << "Total memory:"
+        << Colors::CYAN << total_memory << " bytes" << Colors::RESET << "\n";
+    std::cout << std::left << std::setw(25) << "Used memory:"
+        << Colors::YELLOW << used_memory << " bytes" << Colors::RESET << "\n";
+    std::cout << std::left << std::setw(25) << "Free memory:"
+        << Colors::GREEN << free_memory << " bytes" << Colors::RESET << "\n";
+    std::cout << std::left << std::setw(25) << "Idle CPU ticks:"
+        << idle_ticks << "\n";
+    std::cout << std::left << std::setw(25) << "Active CPU ticks:"
+        << active_ticks << "\n";
+    std::cout << std::left << std::setw(25) << "Total CPU ticks:"
+        << total_ticks << "\n";
+    std::cout << std::left << std::setw(25) << "Pages paged in:"
+        << paged_in << "\n";
+    std::cout << std::left << std::setw(25) << "Pages paged out:"
+        << paged_out << "\n";
 }
 
-// Handle 'screen -r <name>' command
-void cmd_screen_view(const std::string& name) {
+// Handle extended screen commands
+void cmd_screen_create_extended(const std::vector<std::string>& tokens) {
     if (!system_initialized) {
-        std::cout << Colors::RED << "Error: System not initialized. Run 'initialize' first.\n"
-            << Colors::RESET;
+        std::cout << Colors::RED << "Error: System not initialized.\n" << Colors::RESET;
+        return;
+    }
+
+    if (tokens[1] == "-s" && tokens.size() >= 4) {
+        // screen -s <name> <memory_size>
+        try {
+            int memory_size = std::stoi(tokens[3]);
+            scheduler->add_process(tokens[2], memory_size);
+            std::cout << Colors::BRIGHT_GREEN << "Process '" << tokens[2]
+                << "' created with " << memory_size << " bytes memory.\n" << Colors::RESET;
+        }
+        catch (const std::exception& e) {
+            std::cout << Colors::RED << "Error: " << e.what() << "\n" << Colors::RESET;
+        }
+    }
+    else if (tokens[1] == "-c" && tokens.size() >= 5) {
+        // screen -c <name> <memory_size> "<instructions>"
+        try {
+            int memory_size = std::stoi(tokens[3]);
+            std::string instructions = tokens[4];
+            // Remove quotes if present and combine remaining tokens
+            for (int i = 5; i < tokens.size(); i++) {
+                instructions += " " + tokens[i];
+            }
+            if (instructions.front() == '"' && instructions.back() == '"') {
+                instructions = instructions.substr(1, instructions.length() - 2);
+            }
+            scheduler->add_process(tokens[2], memory_size, instructions);
+            std::cout << Colors::BRIGHT_GREEN << "Process '" << tokens[2]
+                << "' created with custom instructions.\n" << Colors::RESET;
+        }
+        catch (const std::exception& e) {
+            std::cout << Colors::RED << "Error: " << e.what() << "\n" << Colors::RESET;
+        }
+    }
+}
+
+// Extended screen view with memory violation handling
+void cmd_screen_view_extended(const std::string& name) {
+    if (!system_initialized) {
+        std::cout << Colors::RED << "Error: System not initialized.\n" << Colors::RESET;
         return;
     }
 
     auto process = scheduler->get_process(name);
     if (!process) {
-        std::cout << Colors::RED << "Error: Process '" << name << "' not found!\n"
-            << Colors::RESET;
+        std::cout << Colors::RED << "Error: Process '" << name << "' not found!\n" << Colors::RESET;
+        return;
+    }
+
+    if (process->has_memory_violation()) {
+        std::cout << Colors::BRIGHT_RED << "Process '" << name
+            << "' shut down due to memory access violation error that occurred at "
+            << process->get_violation_info() << "\n" << Colors::RESET;
         return;
     }
 
     if (process->is_finished()) {
         std::cout << Colors::YELLOW << "Process '" << name << "' already finished.\n"
-            << "Cannot reattach. Use 'screen -ls' to view summary.\n"
-            << Colors::RESET;
+            << "Cannot reattach. Use 'screen -ls' to view summary.\n" << Colors::RESET;
         return;
     }
 
@@ -1802,6 +2343,56 @@ void cmd_screen_view(const std::string& name) {
     suspend_cpu_display = false;
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// SECTION 10: EXISTING COMMAND HANDLERS (Updated for MO2)
+// ═══════════════════════════════════════════════════════════════════════
+
+// Handle 'initialize' command
+void cmd_initialize() {
+    if (system_initialized) {
+        std::cout << Colors::YELLOW << "System already initialized!\n" << Colors::RESET;
+        return;
+    }
+
+    scheduler = std::make_unique<Scheduler>(NUM_CPU, SCHEDULER_TYPE, QUANTUM_CYCLES);
+    scheduler->start();
+    system_initialized = true;
+
+    std::cout << Colors::BRIGHT_GREEN << "OS Emulator initialized successfully!\n" << Colors::RESET;
+    std::cout << Colors::CYAN << "Scheduler type: " << SCHEDULER_TYPE << "\n";
+    std::cout << "CPU cores: " << NUM_CPU << "\n";
+    std::cout << "Total memory: " << MAX_OVERALL_MEM << " bytes\n";
+    std::cout << "Page size: " << MEM_PER_FRAME << " bytes\n" << Colors::RESET;
+}
+
+// Handle 'screen -s <name>' command (legacy without memory)
+void cmd_screen_create(const std::string& name) {
+    if (!system_initialized) {
+        std::cout << Colors::RED << "Error: System not initialized. Run 'initialize' first.\n"
+            << Colors::RESET;
+        return;
+    }
+
+    // Check if process already exists
+    if (scheduler->get_process(name)) {
+        std::cout << Colors::RED << "Error: Process '" << name << "' already exists!\n"
+            << Colors::RESET;
+        return;
+    }
+
+    // Create process with default memory size (MIN_MEM_PER_PROC)
+    try {
+        scheduler->add_process(name, MIN_MEM_PER_PROC);
+        auto p = scheduler->get_process(name);
+        int instructions = p ? p->get_total_commands() : 0;
+        std::cout << Colors::BRIGHT_GREEN << "Process '" << name << "' created with "
+            << instructions << " instructions and " << MIN_MEM_PER_PROC << " bytes memory.\n" << Colors::RESET;
+    }
+    catch (const std::exception& e) {
+        std::cout << Colors::RED << "Error: " << e.what() << "\n" << Colors::RESET;
+    }
+}
+
 // Handle 'screen -ls' command
 void cmd_screen_list() {
     if (!system_initialized) {
@@ -1831,17 +2422,17 @@ void cmd_scheduler_start() {
 
     std::cout << Colors::BRIGHT_YELLOW
         << "Starting continuous process generation every "
-        << BATCH_PROCESS_FREQ << " seconds...\n"
+        << BATCH_PROCESS_FREQ << " CPU ticks...\n"
         << Colors::RESET;
 
     batch_thread = std::thread([]() {
-        uint64_t next_target = scheduler->get_cpu_ticks() + BATCH_PROCESS_FREQ;
+        uint64_t next_generation_tick = scheduler->get_cpu_ticks() + BATCH_PROCESS_FREQ;
 
-        while (scheduler_autorun) {
+        while (scheduler_autorun && is_running) {
             uint64_t current_ticks = scheduler->get_cpu_ticks();
 
-            // Check if it's time to generate a new process
-            if (current_ticks >= next_target) {
+            // Check if it's time to generate a new process based on CPU ticks
+            if (current_ticks >= next_generation_tick) {
                 {
                     std::lock_guard<std::mutex> lock(batch_mutex);
 
@@ -1857,48 +2448,68 @@ void cmd_scheduler_start() {
                         name = oss.str();
                     }
 
-                    // Add process to scheduler
-                    scheduler->add_process(name, 0);
+                    // Add process to scheduler with default memory
+                    try {
+                        scheduler->add_process(name, MIN_MEM_PER_PROC);
+                        auto new_process = scheduler->get_process(name);
 
-                    // Console output (safe)
-                    {
-                        std::lock_guard<std::mutex> console_lock(console_mutex);
-                        printf("\033[s");  // Save cursor position
-                        printf("\033[%d;%dH", layout.output_start_row, 1);
-                        printf("\033[K");
-                        printf("%sGenerated: %s (%d instructions)%s",
-                            Colors::GREEN.c_str(),
-                            name.c_str(),
-                            scheduler->get_process(name)->get_total_commands(),
-                            Colors::RESET.c_str());
-                        printf("\033[u");
-                        fflush(stdout);
+                        // Console output (safe) - only if display is not suspended
+                        if (!suspend_cpu_display) {
+                            std::lock_guard<std::mutex> console_lock(console_mutex);
+                            printf("\033[s");  // Save cursor position
+                            printf("\033[%d;%dH", layout.output_start_row, 1);
+                            printf("\033[K");
+                            printf("%sGenerated: %s (%d instructions, %d bytes) at tick %llu%s",
+                                Colors::GREEN.c_str(),
+                                name.c_str(),
+                                new_process ? new_process->get_total_commands() : 0,
+                                MIN_MEM_PER_PROC,
+                                (unsigned long long)current_ticks,
+                                Colors::RESET.c_str());
+                            printf("\033[u");
+                            fflush(stdout);
+                        }
+
+                        // Set next generation tick target
+                        next_generation_tick = current_ticks + BATCH_PROCESS_FREQ;
+                    }
+                    catch (const std::exception& e) {
+                        // Error handling - only if display is not suspended
+                        if (!suspend_cpu_display) {
+                            std::lock_guard<std::mutex> console_lock(console_mutex);
+                            printf("\033[s");
+                            printf("\033[%d;%dH", layout.output_start_row, 1);
+                            printf("\033[K");
+                            printf("%sError generating process: %s%s",
+                                Colors::RED.c_str(),
+                                e.what(),
+                                Colors::RESET.c_str());
+                            printf("\033[u");
+                            fflush(stdout);
+                        }
                     }
                 }
-
-                // Set next generation tick target
-                next_target = current_ticks + BATCH_PROCESS_FREQ;
             }
 
-            // Light sleep to avoid busy waiting
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            // Light sleep to avoid busy waiting (1ms = 100 CPU ticks at 10ms/tick)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
 
-        // Output stop message
-        {
+        // Output stop message - only if display is not suspended
+        if (!suspend_cpu_display) {
             std::lock_guard<std::mutex> console_lock(console_mutex);
             printf("\033[s");
             printf("\033[%d;%dH", layout.output_start_row, 1);
             printf("\033[K");
-            printf("%sProcess generation stopped.%s",
+            printf("%sProcess generation stopped at tick %llu.%s",
                 Colors::BRIGHT_YELLOW.c_str(),
+                (unsigned long long)scheduler->get_cpu_ticks(),
                 Colors::RESET.c_str());
             printf("\033[u");
             fflush(stdout);
         }
         });
 }
-
 
 // Handle 'scheduler-stop' command
 void cmd_scheduler_stop() {
@@ -1932,7 +2543,6 @@ void cmd_scheduler_stop() {
         << Colors::RESET;
 }
 
-
 // Handle 'report-util' command
 void cmd_report_util() {
     if (!system_initialized) {
@@ -1949,132 +2559,8 @@ void cmd_report_util() {
     generate_report();
 }
 
-// MO2: Handle 'vmstat' command - Display virtual memory statistics
-void cmd_vmstat() {
-    if (!system_initialized) {
-        std::cout << Colors::RED << "Error: System not initialized. Run 'initialize' first.\n" << Colors::RESET;
-        return;
-    }
-
-    if (!memory_manager) {
-        std::cout << Colors::RED << "Error: Memory manager not available.\n" << Colors::RESET;
-        return;
-    }
-
-    size_t total_mem, used_mem, free_mem;
-    memory_manager->get_stats(total_mem, used_mem, free_mem);
-    
-    uint64_t pages_in, pages_out;
-    memory_manager->get_paging_stats(pages_in, pages_out);
-    
-    size_t num_frames = memory_manager->get_num_frames();
-    size_t free_frames = memory_manager->get_free_frames();
-    size_t used_frames = num_frames - free_frames;
-    
-    std::cout << "\n" << Colors::BRIGHT_CYAN << "════════════════════════════════════════\n";
-    std::cout << "         VIRTUAL MEMORY STATISTICS\n";
-    std::cout << "════════════════════════════════════════\n" << Colors::RESET;
-    
-    std::cout << Colors::CYAN << "Total Memory:        " << Colors::WHITE << total_mem << " KB\n";
-    std::cout << Colors::CYAN << "Used Memory:         " << Colors::WHITE << used_mem << " KB\n";
-    std::cout << Colors::CYAN << "Free Memory:         " << Colors::WHITE << free_mem << " KB\n";
-    std::cout << "\n";
-    std::cout << Colors::CYAN << "Total Frames:        " << Colors::WHITE << num_frames << "\n";
-    std::cout << Colors::CYAN << "Used Frames:         " << Colors::WHITE << used_frames << "\n";
-    std::cout << Colors::CYAN << "Free Frames:         " << Colors::WHITE << free_frames << "\n";
-    std::cout << "\n";
-    std::cout << Colors::CYAN << "Num paged in:        " << Colors::WHITE << pages_in << "\n";
-    std::cout << Colors::CYAN << "Num paged out:       " << Colors::WHITE << pages_out << "\n";
-    std::cout << Colors::BRIGHT_CYAN << "════════════════════════════════════════\n" << Colors::RESET;
-}
-
-// MO2: Handle 'process-smi' command - Display process memory information
-void cmd_process_smi() {
-    if (!system_initialized) {
-        std::cout << Colors::RED << "Error: System not initialized. Run 'initialize' first.\n" << Colors::RESET;
-        return;
-    }
-
-    if (!memory_manager) {
-        std::cout << Colors::RED << "Error: Memory manager not available.\n" << Colors::RESET;
-        return;
-    }
-
-    auto procs = scheduler->get_all_processes();
-    
-    // Get CPU utilization
-    int active_cores, total_cores, running_procs, finished_procs;
-    scheduler->get_stats(active_cores, total_cores, running_procs, finished_procs);
-    double cpu_util = (total_cores > 0) ? (100.0 * active_cores / total_cores) : 0.0;
-    
-    size_t total_mem, used_mem, free_mem;
-    memory_manager->get_stats(total_mem, used_mem, free_mem);
-    
-    std::cout << "\n" << Colors::BRIGHT_CYAN << "══════════════════════════════════════════════════════════════\n";
-    std::cout << "                    PROCESS MEMORY INFORMATION\n";
-    std::cout << "══════════════════════════════════════════════════════════════\n" << Colors::RESET;
-    
-    std::cout << Colors::CYAN << "CPU Utilization: " << Colors::WHITE << std::fixed << std::setprecision(1) 
-              << cpu_util << "%\n";
-    std::cout << Colors::CYAN << "Memory Usage:    " << Colors::WHITE << used_mem << " / " << total_mem << " KB\n";
-    std::cout << Colors::CYAN << "Memory Util:     " << Colors::WHITE << std::fixed << std::setprecision(1)
-              << (total_mem > 0 ? (100.0 * used_mem / total_mem) : 0.0) << "%\n";
-    
-    std::cout << "\n" << Colors::BRIGHT_WHITE << "Running Processes:\n" << Colors::RESET;
-    std::cout << std::left << std::setw(20) << "Process" 
-              << std::setw(15) << "Memory (KB)"
-              << std::setw(15) << "Pages In"
-              << std::setw(15) << "Pages Out" << "\n";
-    std::cout << Colors::BRIGHT_CYAN << "──────────────────────────────────────────────────────────────\n" << Colors::RESET;
-    
-    bool has_running = false;
-    for (const auto& proc : procs) {
-        if (proc->get_state() != Process::FINISHED) {
-            has_running = true;
-            size_t mem_usage, pages_in, pages_out;
-            if (memory_manager->get_process_info(proc->get_id(), mem_usage, pages_in, pages_out)) {
-                std::cout << std::left << std::setw(20) << proc->get_name()
-                          << std::setw(15) << mem_usage
-                          << std::setw(15) << pages_in
-                          << std::setw(15) << pages_out << "\n";
-            }
-        }
-    }
-    
-    if (!has_running) {
-        std::cout << Colors::YELLOW << "(No running processes)\n" << Colors::RESET;
-    }
-    
-    std::cout << Colors::BRIGHT_CYAN << "══════════════════════════════════════════════════════════════\n" << Colors::RESET;
-}
-
-// MO2: Handle 'scheduler-test' command - Automated scheduler testing
-void cmd_scheduler_test() {
-    if (!system_initialized) {
-        std::cout << Colors::RED << "Error: System not initialized. Run 'initialize' first.\n" << Colors::RESET;
-        return;
-    }
-
-    std::cout << Colors::BRIGHT_GREEN << "\n╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║          SCHEDULER TEST - Automated Execution            ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n" << Colors::RESET;
-    
-    std::cout << Colors::CYAN << "\nStarting automated process generation...\n" << Colors::RESET;
-    std::cout << Colors::YELLOW << "Press Ctrl+C to stop\n\n" << Colors::RESET;
-    
-    // Start the scheduler autorun
-    cmd_scheduler_start();
-    
-    std::cout << Colors::BRIGHT_GREEN << "✓ Scheduler test initiated successfully\n" << Colors::RESET;
-    std::cout << Colors::WHITE << "  - Processes will be generated every " << BATCH_PROCESS_FREQ << " second(s)\n";
-    std::cout << Colors::WHITE << "  - Use 'scheduler-stop' to halt generation\n";
-    std::cout << Colors::WHITE << "  - Use 'screen -ls' to view all processes\n";
-    std::cout << Colors::WHITE << "  - Use 'process-smi' to view memory usage\n";
-    std::cout << Colors::WHITE << "  - Use 'vmstat' to view memory statistics\n" << Colors::RESET;
-}
-
 // ═══════════════════════════════════════════════════════════════════════
-// SECTION 8: COMMAND PROCESSOR
+// SECTION 11: COMMAND PROCESSOR (Updated for MO2)
 // ═══════════════════════════════════════════════════════════════════════
 
 // Parse and execute command
@@ -2110,15 +2596,30 @@ void process_command(const std::string& input) {
     else if (cmd == "screen") {
         if (tokens.size() < 2) {
             std::cout << Colors::RED << "Error: Invalid screen command. Usage:\n"
-                << "  screen -s <name>  (create process)\n"
+                << "  screen -s <name> <memory_size>  (create process with memory)\n"
+                << "  screen -c <name> <memory_size> \"<instructions>\"  (create with custom instructions)\n"
                 << "  screen -r <name>  (view process)\n"
                 << "  screen -ls        (list processes)\n" << Colors::RESET;
         }
-        else if (tokens[1] == "-s" && tokens.size() >= 3) {
-            cmd_screen_create(tokens[2]);
+        else if (tokens[1] == "-s") {
+            if (tokens.size() >= 4) {
+                cmd_screen_create_extended(tokens);
+            }
+            else {
+                // Legacy support: screen -s <name> without memory
+                if (tokens.size() >= 3) {
+                    cmd_screen_create(tokens[2]);
+                }
+                else {
+                    std::cout << Colors::RED << "Error: screen -s requires process name and memory size\n" << Colors::RESET;
+                }
+            }
+        }
+        else if (tokens[1] == "-c" && tokens.size() >= 5) {
+            cmd_screen_create_extended(tokens);
         }
         else if (tokens[1] == "-r" && tokens.size() >= 3) {
-            cmd_screen_view(tokens[2]);
+            cmd_screen_view_extended(tokens[2]);
         }
         else if (tokens[1] == "-ls") {
             cmd_screen_list();
@@ -2134,17 +2635,14 @@ void process_command(const std::string& input) {
     else if (cmd == "scheduler-stop") {
         cmd_scheduler_stop();
     }
-    else if (cmd == "report-util") {
-        cmd_report_util();
+    else if (cmd == "process-smi") {
+        cmd_process_smi();
     }
     else if (cmd == "vmstat") {
         cmd_vmstat();
     }
-    else if (cmd == "process-smi") {
-        cmd_process_smi();
-    }
-    else if (cmd == "scheduler-test") {
-        cmd_scheduler_test();
+    else if (cmd == "report-util") {
+        cmd_report_util();
     }
     else if (cmd == "clear") {
         display_main_ui();
@@ -2162,7 +2660,7 @@ void process_command(const std::string& input) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// SECTION 9: KEYBOARD INPUT HANDLER
+// SECTION 12: KEYBOARD INPUT HANDLER (Existing)
 // ═══════════════════════════════════════════════════════════════════════
 
 // Keyboard input thread
@@ -2177,6 +2675,9 @@ void keyboard_handler_thread() {
             is_running = false;
             break;
         }
+
+        // Suspend CPU display while processing command to prevent overlap
+        suspend_cpu_display = true;
 
         // Clear the input area (from column 10 onwards) to remove the typed command
         {
@@ -2193,11 +2694,15 @@ void keyboard_handler_thread() {
         }
 
         if (line.empty()) {
+            suspend_cpu_display = false;
             display_main_ui();
             continue;
         }
 
         process_command(line);
+
+        // Re-enable CPU display after command completes
+        suspend_cpu_display = false;
 
         // Redraw prompt
         gotoxy(1, layout.prompt_row);
@@ -2209,12 +2714,12 @@ void keyboard_handler_thread() {
 void cpu_display_thread() {
     while (is_running) {
         update_cpu_display();
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        std::this_thread::sleep_for(std::chrono::milliseconds(3000));
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// SECTION 10: MAIN FUNCTION
+// SECTION 13: MAIN FUNCTION
 // ═══════════════════════════════════════════════════════════════════════
 
 int main() {
