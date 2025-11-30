@@ -2159,6 +2159,8 @@ void cmd_process_smi() {
         return;
     }
 
+    suspend_cpu_display = true;
+
     int total_memory, used_memory, free_memory, total_pages, used_pages, free_pages;
     scheduler->get_memory_manager()->get_memory_stats(total_memory, used_memory, free_memory,
         total_pages, used_pages, free_pages);
@@ -2207,6 +2209,8 @@ void cmd_process_smi() {
     std::cout << Colors::BRIGHT_CYAN
         << "----------------------------------------------------------------------\n"
         << Colors::RESET;
+
+    suspend_cpu_display = false;
 }
 
 // Handle 'vmstat' command
@@ -2215,6 +2219,8 @@ void cmd_vmstat() {
         std::cout << Colors::RED << "Error: System not initialized.\n" << Colors::RESET;
         return;
     }
+
+    suspend_cpu_display = true;
 
     int total_memory, used_memory, free_memory;
     int idle_ticks, active_ticks, total_ticks;
@@ -2243,6 +2249,8 @@ void cmd_vmstat() {
         << paged_in << "\n";
     std::cout << std::left << std::setw(25) << "Pages paged out:"
         << paged_out << "\n";
+
+    suspend_cpu_display = false;
 }
 
 // Handle extended screen commands
