@@ -1071,12 +1071,31 @@ void update_cpu_display() {
             printf("\033[%d;%dH", layout.cpu_util_row + 1, 1);
             printf("%s", std::string(layout.screen_width, ' ').c_str());
             printf("\033[%d;%dH", layout.cpu_util_row + 1, 1);
-            printf("%sCPU Utilization: %s%d/%d cores active%s | %sRunning: %s%d%s | %sFinished: %s%d%s | %sCPU Ticks: %s%llu%s",
+            
+            double utilization = (total > 0) ? (active * 100.0 / total) : 0;
+
+            printf(
+                "%sCPU Utilization: %s%.0f%%%s   "
+                "| %sCores Active:%s %d/%d   "
+                "| %sRunning:%s %d   "
+                "| %sFinished:%s %d   "
+                "| %sCPU Ticks:%s %llu%s",
                 Colors::BRIGHT_WHITE.c_str(),
-                Colors::CYAN.c_str(), active, total, Colors::RESET.c_str(),
-                Colors::BRIGHT_WHITE.c_str(), Colors::GREEN.c_str(), running, Colors::RESET.c_str(),
-                Colors::BRIGHT_WHITE.c_str(), Colors::YELLOW.c_str(), finished, Colors::RESET.c_str(),
-                Colors::BRIGHT_WHITE.c_str(), Colors::BRIGHT_CYAN.c_str(), (unsigned long long)ticks, Colors::RESET.c_str());
+                Colors::CYAN.c_str(), utilization, Colors::RESET.c_str(),
+
+                Colors::BRIGHT_WHITE.c_str(), Colors::CYAN.c_str(),
+                active, total,
+
+                Colors::BRIGHT_WHITE.c_str(), Colors::GREEN.c_str(),
+                running,
+
+                Colors::BRIGHT_WHITE.c_str(), Colors::YELLOW.c_str(),
+                finished,
+
+                Colors::BRIGHT_WHITE.c_str(), Colors::BRIGHT_CYAN.c_str(),
+                (unsigned long long)ticks,
+                Colors::RESET.c_str()
+                );
             printf("\033[u");  // Restore cursor position
             fflush(stdout);
         }
@@ -1199,14 +1218,12 @@ void display_process_list() {
 
     // HEADER SECTION
     std::cout << Colors::BRIGHT_WHITE << "CPU utilization: "
-        << Colors::CYAN << std::fixed << std::setprecision(0)
-        << utilization << "%" << Colors::RESET << "\n";
+          << Colors::CYAN << std::fixed << std::setprecision(0)
+          << utilization << "%" << Colors::RESET << "\n";
 
-    std::cout << Colors::BRIGHT_WHITE << "Cores used: "
-        << Colors::GREEN << active << Colors::RESET << "\n";
+    std::cout << Colors::BRIGHT_WHITE << "Cores active: "
+          << Colors::GREEN << active << "/" << total << Colors::RESET << "\n";
 
-    std::cout << Colors::BRIGHT_WHITE << "Cores available: "
-        << Colors::YELLOW << (total - active) << Colors::RESET << "\n";
 
     std::cout << Colors::BRIGHT_BLUE
         << "-------------------------------------------------------------\n"
