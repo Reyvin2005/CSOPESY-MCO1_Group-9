@@ -5,7 +5,7 @@
                         Barlaan, Bahir Benjamin C.
                         Co, Joshua Benedict B.
                         Tan, Reyvin Matthew T.
-    Version Date: November 30, 2025
+    Version Date: December 2, 2025
 
     ═══════════════════════════════════════════════════════════════════════
     HOW TO USE THIS OS EMULATOR:
@@ -211,6 +211,7 @@ int DELAYS_PER_EXEC = 100;                // Delay in CPU ticks per instruction 
 int MAX_OVERALL_MEM = 65536;              // Maximum physical memory in bytes
 int MEM_PER_FRAME = 64;                   // Page/frame size in bytes
 int MIN_MEM_PER_PROC = 64;                // Minimum memory per process
+int MAX_MEM_PER_PROC = 64;                // Maximum memory per process
 
 // Memory constants
 const int SYMBOL_TABLE_SIZE = 64;         // Fixed symbol table size
@@ -274,7 +275,11 @@ void load_config() {
             }
             else if (key == "min-mem-per-proc") {
                 MIN_MEM_PER_PROC = std::stoi(value);
-                if (MIN_MEM_PER_PROC < 64) MIN_MEM_PER_PROC = 64;
+                if (MIN_MEM_PER_PROC < 1) MIN_MEM_PER_PROC = 1;
+            }
+            else if (key == "max-mem-per-proc") {
+                MAX_MEM_PER_PROC = std::stoi(value);
+                if (MAX_MEM_PER_PROC < MIN_MEM_PER_PROC) MAX_MEM_PER_PROC = MIN_MEM_PER_PROC;
             }
         }
         catch (const std::exception& e) {
@@ -337,43 +342,112 @@ public:
         physical_memory.resize(num_frames);
     }
 
-    // Allocate memory for a process
+    // Allocates memory for a process using pre-allocation strategy.
+    // Note: Unlike demand paging, we allocate physical frames immediately to ensure
+    // memory stats accurately reflect actual usage. Uses FIFO page replacement when full.
     bool allocate_memory(int process_id, int memory_size) {
         std::lock_guard<std::mutex> lock(memory_mutex);
 
-        // Validate memory size
+        // Validate allocation size and alignment
         if (memory_size < MIN_MEMORY_ALLOC || memory_size > MAX_MEMORY_ALLOC) {
             return false;
         }
 
-        // Check if it's power of 2
         if ((memory_size & (memory_size - 1)) != 0) {
-            return false;
+            return false;  // Must be power of 2
         }
 
         int pages_needed = (memory_size + MEM_PER_FRAME - 1) / MEM_PER_FRAME;
+        if (pages_needed < 1) pages_needed = 1;
+        
+        // If process needs more pages than total physical frames, reject allocation
+        // This creates deadlock when min-mem-per-proc > max-overall-mem (e.g., TC8)
+        int total_frames = physical_memory.size();
+        if (pages_needed > total_frames) {
+            return false;  // Cannot allocate more than total physical memory
+        }
 
-        // Initialize page table
         std::vector<PageTableEntry> page_table(pages_needed);
+        
+        // Pre-allocate all frames upfront
+        for (int page = 0; page < pages_needed; page++) {
+            
+            int frame_number = -1;
+            for (int i = 0; i < physical_memory.size(); i++) {
+                if (!physical_memory[i].allocated) {
+                    frame_number = i;
+                    break;
+                }
+            }
+            
+            // Handle memory pressure with FIFO replacement
+            if (frame_number == -1) {
+                if (!page_replacement_queue.empty()) {
+                    frame_number = page_replacement_queue.front();
+                    page_replacement_queue.pop_front();
+                    
+                    // Evict victim frame to backing store
+                    if (physical_memory[frame_number].allocated) {
+                        int victim_pid = physical_memory[frame_number].process_id;
+                        int victim_page = physical_memory[frame_number].page_number;
+                        
+                        BackingStoreEntry entry;
+                        entry.process_id = victim_pid;
+                        entry.page_number = victim_page;
+                        entry.data = physical_memory[frame_number].data;
+                        backing_store[{victim_pid, victim_page}] = entry;
+                        
+                        // Invalidate victim's page table entry
+                        auto vit = page_tables.find(victim_pid);
+                        if (vit != page_tables.end() && victim_page < vit->second.size()) {
+                            vit->second[victim_page].valid = false;
+                            vit->second[victim_page].frame_number = -1;
+                        }
+                        
+                        pages_paged_out++;
+                    }
+                } else {
+                    return false;  // OOM condition
+                }
+            }
+            
+            // Initialize frame for new process
+            physical_memory[frame_number].allocated = true;
+            physical_memory[frame_number].process_id = process_id;
+            physical_memory[frame_number].page_number = page;
+            physical_memory[frame_number].last_used = current_tick++;
+            
+            std::fill(physical_memory[frame_number].data.begin(), 
+                      physical_memory[frame_number].data.end(), 0);
+            
+            // Update page table mapping
+            page_table[page].valid = true;
+            page_table[page].frame_number = frame_number;
+            page_table[page].referenced = true;
+            
+            // Track for FIFO replacement
+            page_replacement_queue.push_back(frame_number);
+            
+            pages_paged_in++;
+        }
+        
         page_tables[process_id] = page_table;
 
         return true;
     }
 
-    // Deallocate memory for a process
+    // Frees all resources associated with a process
     void deallocate_memory(int process_id) {
         std::lock_guard<std::mutex> lock(memory_mutex);
 
         auto it = page_tables.find(process_id);
         if (it == page_tables.end()) return;
 
-        // Free all frames used by this process
         for (int i = 0; i < it->second.size(); i++) {
             if (it->second[i].valid) {
                 int frame_num = it->second[i].frame_number;
                 physical_memory[frame_num].allocated = false;
 
-                // Remove from replacement queue
                 auto queue_it = std::find(page_replacement_queue.begin(),
                     page_replacement_queue.end(), frame_num);
                 if (queue_it != page_replacement_queue.end()) {
@@ -381,14 +455,13 @@ public:
                 }
             }
 
-            // Remove from backing store
             backing_store.erase({ process_id, i });
         }
 
         page_tables.erase(process_id);
     }
 
-    // Handle page fault
+    // Handles page fault by loading page into physical memory
     bool handle_page_fault(int process_id, int page_number) {
         std::lock_guard<std::mutex> lock(memory_mutex);
         current_tick++;
@@ -396,40 +469,34 @@ public:
         auto& page_table = page_tables[process_id];
         if (page_number >= page_table.size()) return false;
 
-        // Find free frame or victim
         int frame_number = find_free_frame();
         if (frame_number == -1) {
             frame_number = select_victim_frame();
             if (frame_number == -1) return false;
         }
 
-        // Page out victim if needed
         if (physical_memory[frame_number].allocated) {
             page_out_frame(frame_number);
         }
 
-        // Page in requested page
         page_in_frame(process_id, page_number, frame_number);
 
-        // Update page table
         page_table[page_number].valid = true;
         page_table[page_number].frame_number = frame_number;
         page_table[page_number].referenced = true;
 
-        // Update frame info
         physical_memory[frame_number].allocated = true;
         physical_memory[frame_number].process_id = process_id;
         physical_memory[frame_number].page_number = page_number;
         physical_memory[frame_number].last_used = current_tick;
 
-        // Add to replacement queue
         page_replacement_queue.push_back(frame_number);
 
         pages_paged_in++;
         return true;
     }
 
-    // Read from memory
+    // Reads 16-bit value from virtual address. Returns false on page fault.
     bool read_memory(int process_id, uint32_t address, uint16_t& value) {
         std::lock_guard<std::mutex> lock(memory_mutex);
         current_tick++;
@@ -437,7 +504,7 @@ public:
         int page_number = address / MEM_PER_FRAME;
         int offset = address % MEM_PER_FRAME;
 
-        if (offset > MEM_PER_FRAME - 2) return false; // uint16 needs 2 bytes
+        if (offset > MEM_PER_FRAME - 2) return false;  // uint16 requires 2 bytes
 
         auto it = page_tables.find(process_id);
         if (it == page_tables.end()) return false;
@@ -446,13 +513,13 @@ public:
         if (page_number >= page_table.size()) return false;
 
         if (!page_table[page_number].valid) {
-            return false; // Page fault - caller should handle
+            return false;  // Page fault
         }
 
         int frame_number = page_table[page_number].frame_number;
         if (frame_number < 0 || frame_number >= physical_memory.size()) return false;
 
-        // Read the value
+        // Big-endian read
         value = (physical_memory[frame_number].data[offset] << 8) |
             physical_memory[frame_number].data[offset + 1];
 
@@ -462,7 +529,7 @@ public:
         return true;
     }
 
-    // Write to memory
+    // Writes 16-bit value to virtual address. Marks page dirty for writeback.
     bool write_memory(int process_id, uint32_t address, uint16_t value) {
         std::lock_guard<std::mutex> lock(memory_mutex);
         current_tick++;
@@ -479,13 +546,13 @@ public:
         if (page_number >= page_table.size()) return false;
 
         if (!page_table[page_number].valid) {
-            return false; // Page fault - caller should handle
+            return false;  // Page fault
         }
 
         int frame_number = page_table[page_number].frame_number;
         if (frame_number < 0 || frame_number >= physical_memory.size()) return false;
 
-        // Write the value
+        // Big-endian write
         physical_memory[frame_number].data[offset] = (value >> 8) & 0xFF;
         physical_memory[frame_number].data[offset + 1] = value & 0xFF;
 
@@ -496,7 +563,7 @@ public:
         return true;
     }
 
-    // Get memory statistics
+    // Returns current memory usage statistics
     void get_memory_stats(int& total_memory, int& used_memory, int& free_memory,
         int& total_pages, int& used_pages, int& free_pages) {
         std::lock_guard<std::mutex> lock(memory_mutex);
@@ -521,21 +588,26 @@ public:
         }
     }
 
-    // Get paging statistics
+    // Returns paging statistics for performance monitoring
     void get_paging_stats(int& paged_in, int& paged_out) {
         paged_in = pages_paged_in.load();
         paged_out = pages_paged_out.load();
     }
 
-    // Save backing store to file
+    // Persists backing store state to disk for debugging
     void save_backing_store() {
         std::lock_guard<std::mutex> lock(memory_mutex);
         std::ofstream file("csopesy-backing-store.txt");
         if (!file.is_open()) return;
 
+        // Get current time as formatted string
+        time_t now = time(nullptr);
+        char timestamp[64];
+        strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
+
         file << "CSOPESY Backing Store\n";
         file << "=====================\n";
-        file << "Last updated: " << time(nullptr) << "\n";
+        file << "Last updated: " << timestamp << "\n";
         file << "Total entries: " << backing_store.size() << "\n\n";
 
         for (const auto& entry : backing_store) {
@@ -557,6 +629,7 @@ private:
         return -1;
     }
 
+    // FIFO page replacement policy
     int select_victim_frame() {
         if (page_replacement_queue.empty()) return -1;
 
@@ -565,19 +638,18 @@ private:
         return victim;
     }
 
+    // Evicts frame to backing store if dirty
     void page_out_frame(int frame_number) {
         if (!physical_memory[frame_number].allocated) return;
 
         int process_id = physical_memory[frame_number].process_id;
         int page_number = physical_memory[frame_number].page_number;
 
-        // Find page table entry
         auto it = page_tables.find(process_id);
         if (it != page_tables.end() && page_number < it->second.size()) {
             auto& entry = it->second[page_number];
 
             if (entry.dirty) {
-                // Save to backing store
                 backing_store[{process_id, page_number}] = {
                     process_id, page_number, physical_memory[frame_number].data
                 };
@@ -592,17 +664,16 @@ private:
         physical_memory[frame_number].allocated = false;
     }
 
+    // Loads page from backing store or initializes new page
     void page_in_frame(int process_id, int page_number, int frame_number) {
         auto key = std::make_pair(process_id, page_number);
         auto it = backing_store.find(key);
 
         if (it != backing_store.end()) {
-            // Load from backing store
             physical_memory[frame_number].data = it->second.data;
             backing_store.erase(it);
         }
         else {
-            // Initialize with zeros
             std::fill(physical_memory[frame_number].data.begin(),
                 physical_memory[frame_number].data.end(), 0);
         }
@@ -1341,9 +1412,9 @@ public:
     void add_process(const std::string& name, int memory_size, const std::string& instructions = "") {
         std::lock_guard<std::mutex> lock(scheduler_mutex);
 
-        // Validate memory size
+        // Validate memory size - must be between MIN_MEMORY_ALLOC and MAX_MEMORY_ALLOC bytes and power of 2
         if (memory_size < MIN_MEMORY_ALLOC || memory_size > MAX_MEMORY_ALLOC) {
-            throw std::invalid_argument("Memory size must be between 64 and 65536 bytes");
+            throw std::invalid_argument("Memory size must be between " + std::to_string(MIN_MEMORY_ALLOC) + " and " + std::to_string(MAX_MEMORY_ALLOC) + " bytes");
         }
 
         if ((memory_size & (memory_size - 1)) != 0) {
@@ -1742,7 +1813,7 @@ void display_welcome() {
         << "Co, Joshua Benedict B.\n"
         << "Tan, Reyvin Matthew T.\n"
         << "\n"
-        << Colors::BRIGHT_CYAN << "Last updated: " << Colors::YELLOW << "11-30-2025\n"
+        << Colors::BRIGHT_CYAN << "Last updated: " << Colors::YELLOW << "12-02-2025\n"
         << Colors::BRIGHT_CYAN
         << "=========================================\n"
         << Colors::RESET;
@@ -2171,18 +2242,22 @@ void cmd_process_smi() {
     double memory_util = total_memory > 0 ? (used_memory * 100.0 / total_memory) : 0;
     double cpu_util = total_cores > 0 ? (active * 100.0 / total_cores) : 0;
 
+    // Convert bytes to KiB for display (appropriate for small memory sizes)
+    double used_kib = used_memory / 1024.0;
+    double total_kib = total_memory / 1024.0;
+
     std::cout << Colors::BRIGHT_CYAN
         << "----------------------------------------------------------------------\n"
-        << "! PROCESS-SMI V01.00 Driver Version: 01.00 !\n"
+        << "| PROCESS-SMI V01.00 Driver Version: 01.00 |\n"
         << "----------------------------------------------------------------------\n"
         << Colors::RESET;
 
     std::cout << Colors::BRIGHT_WHITE << "CPU-Util: " << Colors::GREEN
-        << std::fixed << std::setprecision(1) << cpu_util << "%\n"
+        << std::fixed << std::setprecision(0) << cpu_util << "%\n"
         << Colors::BRIGHT_WHITE << "Memory Usage: " << Colors::YELLOW
-        << used_memory << "B / " << total_memory << "B\n"
+        << std::fixed << std::setprecision(0) << used_kib << "KiB / " << total_kib << "KiB\n"
         << Colors::BRIGHT_WHITE << "Memory Util: " << Colors::CYAN
-        << std::fixed << std::setprecision(1) << memory_util << "%\n"
+        << std::fixed << std::setprecision(0) << memory_util << "%\n"
         << Colors::RESET;
 
     std::cout << Colors::BRIGHT_WHITE
@@ -2194,9 +2269,10 @@ void cmd_process_smi() {
     bool found_running = false;
     for (auto& process : processes) {
         if (process->get_state() != Process::FINISHED && !process->has_memory_violation()) {
+            int mem_bytes = process->get_memory_size();
             std::cout << Colors::BRIGHT_GREEN << std::left << std::setw(15)
                 << process->get_name()
-                << Colors::YELLOW << process->get_memory_size() << "B\n"
+                << Colors::YELLOW << mem_bytes << "B\n"
                 << Colors::RESET;
             found_running = true;
         }
@@ -2419,14 +2495,16 @@ void cmd_scheduler_start() {
         return;
     }
 
-    std::lock_guard<std::mutex> lock(batch_mutex);
+    {
+        std::lock_guard<std::mutex> lock(batch_mutex);
 
-    if (scheduler_autorun) {
-        std::cout << Colors::YELLOW << "Scheduler is already generating processes.\n" << Colors::RESET;
-        return;
-    }
+        if (scheduler_autorun) {
+            std::cout << Colors::YELLOW << "Scheduler is already generating processes.\n" << Colors::RESET;
+            return;
+        }
 
-    scheduler_autorun = true;
+        scheduler_autorun = true;
+    } // Release lock before starting thread
 
     std::cout << Colors::BRIGHT_YELLOW
         << "Starting continuous process generation every "
@@ -2456,9 +2534,25 @@ void cmd_scheduler_start() {
                         name = oss.str();
                     }
 
-                    // Add process to scheduler with default memory
+                    // Generate memory size based on config
+                    // Config values (min/max-mem-per-proc) represent memory in BYTES
+                    int memory_size = MIN_MEM_PER_PROC;
+                    if (MAX_MEM_PER_PROC > MIN_MEM_PER_PROC) {
+                        memory_size = MIN_MEM_PER_PROC + (rand() % (MAX_MEM_PER_PROC - MIN_MEM_PER_PROC + 1));
+                    }
+                    
+                    // Ensure memory is within valid range and power of 2
+                    if (memory_size < MIN_MEMORY_ALLOC) memory_size = MIN_MEMORY_ALLOC;
+                    if (memory_size > MAX_MEMORY_ALLOC) memory_size = MAX_MEMORY_ALLOC;
+                    
+                    // Round up to nearest power of 2 if not already
+                    int power = 1;
+                    while (power < memory_size) power *= 2;
+                    memory_size = power;
+
+                    // Add process to scheduler with memory
                     try {
-                        scheduler->add_process(name, MIN_MEM_PER_PROC);
+                        scheduler->add_process(name, memory_size);
                         auto new_process = scheduler->get_process(name);
 
                         // Console output (safe) - only if display is not suspended
@@ -2471,7 +2565,7 @@ void cmd_scheduler_start() {
                                 Colors::GREEN.c_str(),
                                 name.c_str(),
                                 new_process ? new_process->get_total_commands() : 0,
-                                MIN_MEM_PER_PROC,
+                                memory_size,
                                 (unsigned long long)current_ticks,
                                 Colors::RESET.c_str());
                             printf("\033[u");
@@ -2546,8 +2640,12 @@ void cmd_scheduler_stop() {
         batch_thread.join();
     }
 
+    // Save backing store when stopping (for TC7 requirement)
+    scheduler->get_memory_manager()->save_backing_store();
+
     std::cout << Colors::BRIGHT_YELLOW
         << "Automatic process generation stopped.\n"
+        << "Backing store saved to csopesy-backing-store.txt\n"
         << Colors::RESET;
 }
 
