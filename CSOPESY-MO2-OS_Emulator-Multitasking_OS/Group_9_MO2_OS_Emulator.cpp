@@ -2590,9 +2590,7 @@ void cmd_scheduler_start() {
                         next_generation_tick = current_ticks + BATCH_PROCESS_FREQ;
                     }
                     catch (const std::exception& e) {
-                        // Silently skip failed allocations (e.g., TC8 deadlock scenario)
-                        // This allows the system to show 0% CPU with no processes cleanly
-                        // Just update the next generation tick to keep trying
+                        // Silently skip failed allocations 
                         next_generation_tick = current_ticks + BATCH_PROCESS_FREQ;
                     }
                 }
