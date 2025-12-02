@@ -602,8 +602,10 @@ public:
 
         // Get current time as formatted string
         time_t now = time(nullptr);
-        char timestamp[64];
-        strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
+        char timestamp[80];  
+        struct tm timeinfo;
+        localtime_s(&timeinfo, &now);
+        strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", &timeinfo);
 
         file << "CSOPESY Backing Store\n";
         file << "=====================\n";
