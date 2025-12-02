@@ -1,179 +1,98 @@
-# CSOPESY MO1 — OS Emulator: Process Scheduler (Group 9)
+# MO2 OS Emulator – Multitasking OS with Virtual Memory  
+### CSOPESY MC 02 — Group 9
 
-An interactive, terminal-based OS emulator that simulates a multi-core CPU process scheduler. Supports FCFS and Round-Robin scheduling, process creation/inspection, live CPU utilization display, and utilization report generation.
-
-- Course: CSOPESY | Section S13
-- Assessment: MO1 — OS Emulator — Process Scheduler
-- Developers: Alvarez, Ivan Antonio T.; Barlaan, Bahir Benjamin C.; Co, Joshua Benedict B.; Tan, Reyvin Matthew T.
-- Last Updated: 2025-11-05
-
----
-
-## Project Structure
-
-```
-CSOPESY-MCO1_Group-9-main (1)/
-├─ CSOPESY-MCO1_Group-9-main/
-│  └─ CSOPESY-MCO1-OS_Emulator-Process_Scheduler/
-│     ├─ Group_9_MO1_OS_Emulator.cpp
-│     ├─ CSOPESY-MCO1-OS_Emulator-Process_Scheduler.sln
-│     ├─ CSOPESY-MCO1-OS_Emulator-Process_Scheduler.vcxproj*
-│     ├─ config.txt (optional; runtime config)
-│     ├─ config_rr.txt (sample RR config)
-│     └─ ...
-├─ MO1 - OS Emulator - Process Scheduler.pdf (spec/handout)
-└─ README.md
-```
-
-> Primary source file: `CSOPESY-MCO1_Group-9-main/CSOPESY-MCO1-OS_Emulator-Process_Scheduler/Group_9_MO1_OS_Emulator.cpp`
-
----
+## Overview
+MO2 extends our MO1 OS emulator by adding a complete virtual memory system with demand paging, LRU page replacement, and backing store simulation. It also enhances process creation, instruction execution, and scheduling across multiple CPU cores. The emulator provides an interactive CLI for creating processes, monitoring memory usage, and simulating OS-level behavior.
 
 ## Features
+- Virtual Memory & Paging  
+  - Demand paging and page fault handling  
+  - LRU page replacement when frames are full  
+  - Per-process page table and memory tracking  
+  - Backing store file (csopesy-backing-store.txt)  
+  - 64-byte process symbol table (max 32 uint16 variables)
 
-- Multiple CPU cores (configurable)
-- FCFS and Round-Robin schedulers (configurable quantum)
-- Interactive command console with colored UI and live CPU stats
-- Create/view/list processes; attach to a process screen
-- Auto batch process generation on a timer
-- CPU utilization and process summary report to file
+- CPU Scheduling  
+  - FCFS and Round-Robin  
+  - Multi-core simulation based on num-cpu  
+  - Quantum cycles for RR  
+  - Auto process generation based on config ranges  
+  - Instruction delays to simulate CPU busy-waiting
 
----
+- Diagnostics  
+  - vmstat: detailed memory and paging stats  
+  - process-smi: process and memory summary (like nvidia-smi)  
+  - CPU utilization logging  
+  - screen -r: interactive process display
 
-## Prerequisites
+## Installation / Compilation
+### Windows (MinGW)
+g++ -std=c++14 -pthread -O2 Group_9_MO2_OS_Emulator.cpp -o mo2_emulator.exe
 
-- Windows 10/11, macOS, or Linux
-- C++14-capable compiler
-  - Windows (MSVC): Visual Studio 2019+ or Build Tools
-  - Windows (MinGW): `g++` with pthreads
-  - Linux/macOS: `g++` with pthreads
+### Windows (MSVC)
+cl /EHsc /std:c++14 Group_9_MO2_OS_Emulator.cpp
 
-> On Windows terminals, ANSI color is enabled automatically when available.
-
----
-
-## Build Instructions
-
-Change directory to the source folder first:
-
-```bash
-cd "CSOPESY-MCO1_Group-9-main (1)/CSOPESY-MCO1_Group-9-main/CSOPESY-MCO1-OS_Emulator-Process_Scheduler"
-```
-
-- MSVC (Developer Command Prompt):
-
-```bat
-cl /EHsc /std:c++14 Group_9_MO1_OS_Emulator.cpp
-```
-
-- MinGW (Windows):
-
-```bash
-g++ -std=c++14 -pthread Group_9_MO1_OS_Emulator.cpp -o os_emulator.exe
-```
-
-- Linux/macOS:
-
-```bash
-g++ -std=c++14 -pthread Group_9_MO1_OS_Emulator.cpp -o os_emulator
-```
-
----
-
-## Run
-
-From the same folder where you compiled:
-
-- Windows (MSVC build):
-
-```bat
-Group_9_MO1_OS_Emulator.exe
-```
-
-- Windows (MinGW build):
-
-```bat
-os_emulator.exe
-```
-
-- Linux/macOS:
-
-```bash
-./os_emulator
-```
-
----
+### Linux / macOS
+g++ -std=c++14 -pthread -O2 Group_9_MO2_OS_Emulator.cpp -o mo2_emulator  
+chmod +x mo2_emulator
 
 ## Configuration (config.txt)
+Example:
+num-cpu 4  
+scheduler rr  
+quantum-cycles 5  
+max-overall-mem 32768  
+mem-per-frame 32  
+min-mem-per-proc 128  
+max-mem-per-proc 1024  
+min-ins 50  
+max-ins 150  
+delays-per-exec 0  
+batch-process-freq 1  
 
-Optional file placed next to the executable/source. If absent, safe defaults are used.
+Notes:  
+- Auto-generated process memory is random between min/max, then rounded UP to nearest power of 2, clamped between 64–65536 bytes.  
+- Frame size + total memory directly control paging intensity.
 
-Example `config.txt`:
+## Commands
+### Core
+initialize  
+clear  
+exit  
 
-```
-num-cpu 4
-scheduler fcfs
-quantum-cycles 5
-min-ins 100
-max-ins 1000
-delays-per-exec 100
-batch-process-freq 3
-```
+### Process Management
+screen -s <name> <memory_size>  
+screen -c <name> <memory_size> "<instructions>"  
+screen -r <name>  
+screen -ls  
 
-Parameters:
-- num-cpu: number of CPU cores (>=1)
-- scheduler: `fcfs` or `rr`
-- quantum-cycles: time quantum for `rr` (>=1)
-- min-ins / max-ins: instruction count range used when generating process programs
-- delays-per-exec: ms delay per instruction (>=0)
-- batch-process-freq: seconds between automatic process creation (>=1)
+### Scheduler
+scheduler-start  
+scheduler-stop  
 
-A sample Round-Robin config is included as `config_rr.txt`.
+### Diagnostics
+process-smi  
+vmstat  
+report-util  
 
----
+## Architecture Summary
+- Memory Manager  
+  - Manages frames, page tables, backing store interaction  
+  - Handles page-in/page-out, LRU eviction, and memory stats  
+- Scheduler  
+  - Multi-threaded CPU simulation  
+  - FCFS or RR execution  
+  - Requires valid pages before executing instructions  
+- Processes  
+  - Contain instructions, state, PC, symbol table, memory footprint, and page table
 
-## Interactive Commands
 
-Type these at the `CSOPESY>` prompt in the emulator UI:
+## Authors
+Group 9 - CSOPESY Machine Problem 2  
+Alvarez, Ivan Antonio  
+Barlaan, Bahir Benjamin  
+Co, Joshua Benedict  
+Tan, Reyvin Matthew  
+De La Salle University - Manila, 2025
 
-- `help`: Show available commands
-- `initialize`: Start the OS emulator and scheduler (run this first)
-- `screen -s <name>`: Create a new process
-- `screen -r <name>`: Attach to a process screen (type `exit` to return)
-- `screen -ls`: List processes and states
-- `scheduler-start`: Start auto process generation on a timer
-- `scheduler-stop`: Stop auto generation (scheduler stays on)
-- `report-util`: Generate CPU utilization report (`csopesy-log_YYYYMMDD_HHMMSS.txt`)
-- `clear`: Redraw the main UI
-- `exit`: Exit the emulator
 
-Typical workflow:
-1) `initialize`
-2) `screen -s myProcess1`
-3) `screen -ls`
-4) `screen -r myProcess1` (then `exit`)
-5) `report-util`
-6) `exit`
-
----
-
-## Notes and Tips
-
-- Use a terminal window wide enough (recommend ≥120 cols) to view the UI cleanly.
-- On Windows, prefer a terminal that supports ANSI colors (Windows Terminal, VS Code Terminal, etc.).
-- If a process already finished, `screen -r <name>` won’t reattach; use `screen -ls` for summary instead.
-
----
-
-## Troubleshooting
-
-- Build errors on Windows (MinGW): ensure `-pthread` is included and your MinGW supports C++14.
-- No colors on Windows: run in Windows Terminal or recent PowerShell; ANSI is enabled when possible.
-- Report file not created: ensure write permissions in the working directory.
-- Nothing happens after commands: confirm you ran `initialize` first.
-
----
-
-## License
-
-For academic use within CSOPESY. If you need a specific open-source license, add it here.
