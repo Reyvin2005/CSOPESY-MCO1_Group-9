@@ -88,9 +88,10 @@ report-util
 
 
 ## Authors
-Group 9 — CSOPESY Machine Problem 2  
+Group 9 - CSOPESY Machine Problem 2  
 Alvarez, Ivan Antonio  
 Barlaan, Bahir Benjamin  
 Co, Joshua Benedict  
 Tan, Reyvin Matthew  
-De La Salle University — Manila, 2025
+De La Salle University - Manila, 2025
+
